@@ -1,0 +1,5 @@
+cqc_location_id,name,ods_code,postcode,town,brand_name,provider_id,provider_name,care_home,sector,primary_category,region_name,local_authority_name,valid_from,dormant
+1-100,Example General Hospital,RX1,TN24 0LZ,Ashford,EGH,1-200,East Example NHS Foundation Trust,N,NHS Healthcare,Acute hospital,South East,Ashford,2010-04-01,N
+1-101,Example Nursing Home,,ME7 8YH,Gillingham,Example Home,1-201,Example Care Ltd,Y,Adult social care,Residential social care,South East,Medway,2015-01-01,N
+1-102,Example Surgery,,TN24 0LZ,Ashford,,1-202,Example Surgery,N,Primary medical services,GP,South East,Ashford,2012-06-01,N
+1-103,Dormant Clinic,,TN24 0LZ,Ashford,,1-202,Example Surgery,N,Primary medical services,GP,South East,Ashford,2012-06-01,Y

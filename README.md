@@ -16,6 +16,18 @@ England, current records:
 
 Python, DuckDB, dbt, and Streamlit.
 
+## Run locally
+
+```bash
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m ingest.download
+.venv\Scripts\python -m ingest.build
+.venv\Scripts\python -m streamlit run app/streamlit_app.py
+```
+
+`python -m ingest.build --fixtures` builds a tiny sample used to check the models.
+
 ## Data
 
 Source datasets are used under the Open Government Licence. Attribute NHS England, the Care Quality Commission, and the Office for National Statistics when republishing extracts.

@@ -14,6 +14,7 @@ data/build/
 target/
 dbt_packages/
 logs/
+dbt/.user.yml
 
 # Streamlit
 .streamlit/secrets.toml

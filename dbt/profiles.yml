@@ -1,0 +1,8 @@
+healthcare_locations:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('LOCATIONS_DUCKDB') }}"
+      external_root: "{{ env_var('MART_DIR') }}"
+      threads: 4

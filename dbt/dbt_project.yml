@@ -1,0 +1,28 @@
+name: healthcare_locations
+version: "1.0.0"
+config-version: 2
+profile: healthcare_locations
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+snapshot-paths: ["snapshots"]
+target-path: "target"
+clean-targets: ["target"]
+
+models:
+  healthcare_locations:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: external
+      +format: parquet
+
+snapshots:
+  healthcare_locations:
+    +target_schema: main
+
+vars:
+  raw_root: "data/raw"
