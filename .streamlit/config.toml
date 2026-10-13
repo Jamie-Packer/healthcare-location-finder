@@ -1,0 +1,19 @@
+[theme]
+base = "dark"
+primaryColor = "#d4a24c"
+backgroundColor = "#1b1916"
+secondaryBackgroundColor = "#25221e"
+textColor = "#ece6da"
+linkColor = "#e0b867"
+borderColor = "#3b362e"
+codeBackgroundColor = "#25221e"
+baseRadius = "0.5rem"
+font = "Inter, system-ui, -apple-system, 'Segoe UI', sans-serif"
+headingFont = "Fraunces, Georgia, 'Times New Roman', serif"
+codeFont = "ui-monospace, 'Cascadia Mono', Consolas, monospace"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

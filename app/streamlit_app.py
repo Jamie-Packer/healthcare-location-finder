@@ -2,6 +2,8 @@
 
 import streamlit as st
 
+from theme import apply_theme
+
 st.set_page_config(page_title="Healthcare location reference", layout="wide")
 
 
@@ -23,10 +25,12 @@ if _version_tuple(st.__version__) < (1, 48):
     )
     st.stop()
 
+apply_theme()
+
 st.navigation(
     [
         st.Page("search.py", title="Search", default=True),
-        st.Page("help.py", title="Help"),
+        st.Page("help.py", title="Full guide"),
     ],
     position="hidden",
 ).run()

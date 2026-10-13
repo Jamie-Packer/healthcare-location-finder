@@ -21,6 +21,8 @@ ASSETS = (
     "entity_site.parquet",
     "manifest.json",
 )
+LOCAL = ROOT / "data" / "mart"
+MIN_PARQUET_BYTES = 1_000_000
 SAMPLE_WARNING = (
     "Showing the bundled sample, because the published location files could not be downloaded."
 )
@@ -80,9 +82,11 @@ def _download_release() -> Path | None:
                 raise RuntimeError(f"{name} was not a data file")
             target = staging / name
             target.write_bytes(response.content)
-            if name.endswith(".parquet") and target.stat().st_size < 1_000_000:
+            if name.endswith(".parquet") and target.stat().st_size < MIN_PARQUET_BYTES:
                 raise RuntimeError(f"{name} is too small to be the published mart")
-    except (requests.RequestException, OSError, RuntimeError):
+            if name.endswith(".json"):
+                json.loads(target.read_text(encoding="utf-8"))
+    except (requests.RequestException, OSError, RuntimeError, ValueError):
         shutil.rmtree(staging, ignore_errors=True)
         return None
     if cache.exists():
@@ -91,41 +95,39 @@ def _download_release() -> Path | None:
     return cache
 
 
-def resolve_data() -> LocationData:
+class ReleaseUnavailable(RuntimeError):
+    """The published files could not be downloaded."""
+
+
+def _sample() -> LocationData:
+    if not _complete(SAMPLE):
+        raise FileNotFoundError("Location files are missing, and the sample is missing too.")
+    return LocationData(SAMPLE, "sample", load_manifest(SAMPLE))
+
+
+# Streamlit does not cache a call that raises, so a failed download is retried
+# on the next run instead of pinning the sample for a day.
+@st.cache_resource(ttl=24 * 60 * 60, show_spinner="Loading the latest location files...")
+def _cached_release() -> LocationData:
+    downloaded = _download_release()
+    if downloaded is None or not _complete(downloaded):
+        raise ReleaseUnavailable("download failed")
+    return LocationData(downloaded, "release", load_manifest(downloaded))
+
+
+def ensure_data() -> LocationData:
     override = os.environ.get("LOCATIONS_MART_DIR")
     if override:
         directory = Path(override)
         if not _complete(directory):
             raise FileNotFoundError(f"Location files are missing in {directory}")
         return LocationData(directory, "local", load_manifest(directory))
-    local = ROOT / "data" / "mart"
-    if _complete(local):
-        return LocationData(local, "local", load_manifest(local))
-    downloaded = _download_release()
-    if downloaded is not None and _complete(downloaded):
-        return LocationData(downloaded, "release", load_manifest(downloaded))
-    if not _complete(SAMPLE):
-        raise FileNotFoundError("Location files are missing, and the sample is missing too.")
-    return LocationData(SAMPLE, "sample", load_manifest(SAMPLE))
-
-
-@st.cache_resource(ttl=24 * 60 * 60)
-def _cached_remote() -> LocationData:
-    downloaded = _download_release()
-    if downloaded is not None and _complete(downloaded):
-        return LocationData(downloaded, "release", load_manifest(downloaded))
-    return LocationData(SAMPLE, "sample", load_manifest(SAMPLE))
-
-
-def ensure_data() -> LocationData:
-    override = os.environ.get("LOCATIONS_MART_DIR")
-    if override:
-        return resolve_data()
-    local = ROOT / "data" / "mart"
-    if _complete(local):
-        return LocationData(local, "local", load_manifest(local))
-    return _cached_remote()
-
+    if _complete(LOCAL):
+        return LocationData(LOCAL, "local", load_manifest(LOCAL))
+    try:
+        return _cached_release()
+    except ReleaseUnavailable:
+        return _sample()
 
 def _long_date(value: str) -> str:
     try:

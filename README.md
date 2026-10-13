@@ -59,7 +59,9 @@ The built parquet files are not stored in git. GitHub pauses a scheduled workflo
 
 ## Deploy
 
-Streamlit Community Cloud can run `app/streamlit_app.py` from this repository with `requirements.txt` and Python 3.12. The app reads the `data-latest` release, so publish that release once before sharing the app.
+Streamlit Community Cloud can run `app/streamlit_app.py` from this repository with `requirements.txt` and Python 3.12. The app reads the `data-latest` release without a token, so the repository must be public and that release must exist before you share the app. To create it, run the "Refresh location data" workflow once with "force" ticked. If the download fails, the app shows the small bundled sample with a warning and tries again on the next page load.
+
+The theme lives in `.streamlit/config.toml`, with fonts loaded in `app/theme.py`.
 
 ## Data
 
