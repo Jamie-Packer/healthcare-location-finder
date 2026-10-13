@@ -7,6 +7,7 @@ from streamlit.testing.v1 import AppTest
 
 from app import data as app_data
 from app.data import LocationData, currency_markdown, edition_label
+from app.match_text import download_stem, strip_stopwords
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -58,6 +59,35 @@ def test_search_finds_kent(fixture_mart):
     assert not app.exception
     labels = [str(option) for option in app.selectbox[0].options]
     assert any("Kent" in label for label in labels)
+    assert any(button.label == "Prepare download" for button in app.button)
+
+
+def test_match_string_drops_common_words():
+    assert "HOSPITAL" not in strip_stopwords("WILLIAM HARVEY HOSPITAL NHS TRUST")
+    assert strip_stopwords("WILLIAM HARVEY HOSPITAL NHS TRUST") == "WILLIAM HARVEY"
+    assert strip_stopwords("TN24 0LZ") == "TN24 0LZ"
+
+
+def test_download_stem_follows_the_place_name():
+    assert download_stem("Kent") == "Kent"
+    assert download_stem('East Kent / "Hospitals"') == "East Kent Hospitals"
+    assert download_stem("   ") == "locations"
+
+
+def test_download_uses_the_matching_place_name(fixture_mart):
+    app = _search_app(fixture_mart)
+    app.text_input[0].set_value("Kent").run()
+    next(button for button in app.button if button.label == "Prepare download").click().run()
+    assert app.session_state["export_stem"] == "Kent"
+    assert len(app.download_button) >= 1
+
+
+def test_version_label_and_table_download(fixture_mart):
+    app = _search_app(fixture_mart)
+    html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
+    assert "v0.1 · England · current sites" in html_text
+    app.text_input[0].set_value("Kent").run()
+    assert not app.code
     assert any(button.label == "Prepare download" for button in app.button)
 
 

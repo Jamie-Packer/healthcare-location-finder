@@ -30,8 +30,14 @@ CSS = f"""
     .stApp h1 {{ font-size: 1.9rem; }}
     .stApp .block-container {{ padding-top: 1.5rem; }}
 }}
-.lede {{
+.version {{
     color: #b9b1a2;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    margin: 0.15rem 0 0.4rem 0;
+}}
+.lede {{
+    color: #ece6da;
     font-size: 1.05rem;
     margin: 0 0 1.5rem 0;
 }}

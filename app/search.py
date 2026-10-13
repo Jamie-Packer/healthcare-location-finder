@@ -1,4 +1,4 @@
-"""Search current healthcare locations and copy a keyword string."""
+"""Search current healthcare locations and download a table of sites."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from data import SAMPLE_WARNING, attribution_markdown, attribution_year, ensure_data
+from match_text import download_stem, strip_stopwords
 
 TYPE_LABELS = {
     "country": "Country",
@@ -32,7 +33,6 @@ SERVICES = {
 EXAMPLES = ("Kent", "East Kent Hospitals", "TN24 0LZ")
 EXPORT_COLUMNS = {
     "name": "name",
-    "match_string": "match_string",
     "parent_name": "parent_name",
     "postcode": "postcode",
     "town": "town",
@@ -44,13 +44,13 @@ EXPORT_COLUMNS = {
     "service_type": "service_type",
     "valid_from": "valid_from",
     "valid_to": "valid_to",
+    "match_string": "match_string",
 }
 # Withhold Excel well below the spreadsheet row limit so a very large extract
 # stays a CSV. A full England download is still offered as Excel.
 EXCEL_MAX_ROWS = 200_000
 LARGE_EXPORT_ROWS = 20_000
 TABLE_ROWS = 500
-KEYWORD_ROWS = 200
 
 GUIDE = """
 1. **Search.** Type a place or a name: a county, a trust, a hospital, a postcode,
@@ -59,8 +59,8 @@ GUIDE = """
    an integrated care board, a provider or a single site.
 3. **Choose services.** Leave the service filter empty to see every site, or
    pick one or more types.
-4. **Copy or download.** Copy the keyword strings, one line per site, or prepare
-   a CSV or Excel file of every site in your selection.
+4. **Download the table.** Prepare a CSV, or an Excel file when the extract is
+   small enough. The file has one row per site in your selection.
 
 **Full guide**, top right, covers what is and is not included, and what each column means.
 """
@@ -131,7 +131,10 @@ def _query_sites(
         """,
         [links_path, location_path, entity_id, *service_params],
     ).df()
-    return frame.rename(columns=EXPORT_COLUMNS)
+    frame = frame.rename(columns=EXPORT_COLUMNS)
+    if "match_string" in frame.columns:
+        frame["match_string"] = frame["match_string"].map(strip_stopwords)
+    return frame
 
 
 @st.cache_data(show_spinner=False, max_entries=256)
@@ -196,9 +199,9 @@ def main() -> None:
     with action:
         if st.button("Full guide", width="stretch"):
             st.switch_page("help.py")
+    st.html('<p class="version">v0.1 · England · current sites</p>')
     st.html(
-        '<p class="lede">Find current healthcare sites in England and copy a keyword string '
-        "for each one.</p>"
+        '<p class="lede">Find current healthcare sites and download a table of the ones you select.</p>'
     )
 
     if paths.source == "sample":
@@ -272,14 +275,7 @@ def main() -> None:
     if total > TABLE_ROWS:
         st.caption(f"Showing the first {TABLE_ROWS} sites. The download includes all {total:,}.")
 
-    st.subheader("Export")
-    keyword_text = "\n".join(sites["match_string"].head(KEYWORD_ROWS).astype(str))
-    st.caption("Keyword strings, one line per site. Use the copy button, then paste into your sheet.")
-    with st.container(height=220):
-        st.code(keyword_text, language="text", wrap_lines=True)
-    if total > KEYWORD_ROWS:
-        st.caption(f"The box has the first {KEYWORD_ROWS} strings. The download includes every site.")
-
+    st.caption("Download one row per site, for every site in this filter.")
     if total > LARGE_EXPORT_ROWS:
         st.warning(f"{total:,} rows. Preparing a download can take a moment.")
     excel_ok = total <= EXCEL_MAX_ROWS
@@ -291,26 +287,30 @@ def main() -> None:
         st.session_state["export_token"] = token
         st.session_state.pop("export_csv", None)
         st.session_state.pop("export_xlsx", None)
+        st.session_state.pop("export_stem", None)
 
+    file_stem = download_stem(selected["name"])
     if st.button("Prepare download"):
         with st.spinner("Preparing your files..."):
             everything = _query_sites(links_path, location_path, selected.entity_id, services, None)
             st.session_state["export_csv"] = everything.to_csv(index=False).encode("utf-8")
             st.session_state["export_xlsx"] = _excel(everything) if excel_ok else None
+            st.session_state["export_stem"] = file_stem
 
     if st.session_state.get("export_csv") and st.session_state.get("export_token") == token:
+        stem = st.session_state.get("export_stem") or file_stem
         left, right = st.columns(2)
         left.download_button(
             "Download CSV",
             st.session_state["export_csv"],
-            file_name="locations.csv",
+            file_name=f"{stem}.csv",
             mime="text/csv",
         )
         if st.session_state.get("export_xlsx"):
             right.download_button(
                 "Download Excel",
                 st.session_state["export_xlsx"],
-                file_name="locations.xlsx",
+                file_name=f"{stem}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 

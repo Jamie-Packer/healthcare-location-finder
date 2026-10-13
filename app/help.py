@@ -30,17 +30,17 @@ Data Service. CQC is the Care Quality Commission.)
    single site. The table then lists the current sites under it.
 2. **Choose services.** Leave the service filter empty to see every site. Select
    one or more of hospital, care home, GP and other to narrow the table.
-3. **Copy or download.** The table shows the first 500 sites, and the keyword
-   box the first 200 strings. **Prepare download** builds a CSV, plus an Excel
-   file when the extract is small enough. Both include every site in your
-   selection.
+3. **Download the table.** The screen shows the first 500 sites. **Prepare
+   download** builds a CSV, plus an Excel file when the extract is small enough.
+   Both include every site in your selection, one row per site.
 
 Counties follow the county boundary, so Kent does not include Medway. Medway is
 its own unitary authority. The Kent and Medway ICB covers both.
 
-**`match_string` is the column to copy.** It is one line of keywords for a site:
-its names, parent organisation, town, postcode (with and without the space) and
-codes, with punctuation removed.
+**`match_string` is the last column in that file.** It is one line of keywords
+for a site: its names, parent organisation, town, postcode (with and without
+the space) and codes. Punctuation and common words such as hospital, NHS and
+trust are removed.
 """
 )
 
@@ -62,7 +62,7 @@ st.markdown(
 - Mergers and renames. A renamed organisation is not linked to the one it
   replaced.
 - Free-text matching. The app finds places in this register. It does not
-  compare a sentence from another system, so copy `match_string` and match
+  compare a sentence from another system. Download the table and match it
   elsewhere.
 - Named people, such as registered managers.
 - NHS GP lists, schools, prisons and Welsh health boards. A GP practice appears
@@ -97,7 +97,6 @@ st.markdown(
 | Column | Meaning |
 | --- | --- |
 | `name` | Site name. When ODS and CQC records are combined, the CQC name is kept. |
-| `match_string` | Upper-case keywords with punctuation removed: site name, ODS name, brand, parent, town, postcode with and without the space, ODS code and CQC location id. |
 | `parent_name` | Organisation that runs the site: the ODS parent, or the CQC provider when there is no ODS parent. |
 | `postcode` | Site postcode. |
 | `town` | Town or city from the address. |
@@ -109,5 +108,6 @@ st.markdown(
 | `service_type` | `hospital`, `care home`, `gp` or `other`. |
 | `valid_from` | Start date from the source: the CQC registration date, or the ODS legal start date for sites only on the ODS list. The CQC date wins when both exist. |
 | `valid_to` | End date. Blank means the site is still open. Closed sites are not listed, so this column is empty for now. |
+| `match_string` | Upper-case keywords with punctuation and common words removed: site name, ODS name, brand, parent, town, postcode with and without the space, ODS code and CQC location id. |
 """
 )

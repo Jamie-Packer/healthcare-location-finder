@@ -1,3 +1,12 @@
+{% set stopwords = [
+    'A', 'AN', 'AND', 'AT', 'FOR', 'IN', 'OF', 'ON', 'THE', 'TO',
+    'NHS', 'TRUST', 'FOUNDATION',
+    'HOSPITAL', 'HOSPITALS',
+    'CENTRE', 'CENTER', 'CLINIC', 'CLINICS',
+    'LIMITED', 'LTD', 'PLC',
+    'ROAD', 'STREET', 'AVENUE', 'LANE', 'DRIVE', 'CLOSE', 'WAY', 'COURT', 'PLACE'
+] %}
+
 with sites as (
     select
         *,
@@ -17,14 +26,31 @@ with sites as (
             '[^A-Z0-9]+',
             ' ',
             'g'
-        )) as match_string
+        )) as match_tokens
     from {{ ref('int_sites') }}
+),
+
+cleaned as (
+    select
+        * exclude (match_tokens),
+        trim(array_to_string(
+            list_filter(
+                string_split(match_tokens, ' '),
+                token -> token <> ''
+                    and token not in (
+                        {% for word in stopwords %}
+                        '{{ word }}'{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                    )
+            ),
+            ' '
+        )) as match_string
+    from sites
 )
 
 select
     location_id,
     name,
-    match_string,
     parent_name,
     parent_code,
     postcode,
@@ -44,5 +70,6 @@ select
     cqc_location_id,
     service_type,
     valid_from,
-    valid_to
-from sites
+    valid_to,
+    match_string
+from cleaned

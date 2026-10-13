@@ -1,8 +1,8 @@
 # Healthcare location reference
 
-Look up UK healthcare locations and copy a keyword string for fuzzy matching.
+Look up UK healthcare locations and download a table of the sites you select.
 
-Search at country, region, county, local authority, integrated care board, provider, or site level. Results list the sites under that place, with names, aliases, parent organisations, postcodes, and organisation codes. Each location includes one pasteable string of keywords and aliases.
+Search at country, region, county, local authority, integrated care board, provider, or site level. Results list the sites under that place. The download has one row per site, with names, a parent organisation, a postcode, organisation codes, and a keyword string.
 
 ## MVP
 
