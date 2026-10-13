@@ -1,32 +1,32 @@
 with countries as (
     select
-        nullif(trim(CTRY25CD), '') as code,
-        nullif(trim(CTRY25NM), '') as name
+        nullif(trim(code), '') as code,
+        nullif(trim(name), '') as name
     from {{ read_header_csv('ons/names/CTRY.csv') }}
 ),
 regions as (
     select
-        nullif(trim(RGN25CD), '') as code,
-        nullif(trim(RGN25NM), '') as name
+        nullif(trim(code), '') as code,
+        nullif(trim(name), '') as name
     from {{ read_header_csv('ons/names/RGN.csv') }}
 ),
 counties as (
     select
-        nullif(trim(CTY25CD), '') as code,
-        nullif(trim(CTY25NM), '') as name
+        nullif(trim(code), '') as code,
+        nullif(trim(name), '') as name
     from {{ read_header_csv('ons/names/CTY.csv') }}
 ),
 local_authorities as (
     select
-        nullif(trim(LAD25CD), '') as code,
-        nullif(trim(LAD25NM), '') as name
+        nullif(trim(code), '') as code,
+        nullif(trim(name), '') as name
     from {{ read_header_csv('ons/names/LAD.csv') }}
 ),
 integrated_care_boards as (
     select
-        nullif(trim(ICB26CD), '') as statistical_code,
-        nullif(upper(trim(ICB26CDH)), '') as ods_code,
-        nullif(trim(ICB26NM), '') as name
+        nullif(trim(code), '') as statistical_code,
+        nullif(upper(trim(ods_code)), '') as ods_code,
+        nullif(trim(name), '') as name
     from {{ read_header_csv('ons/names/ICB.csv') }}
 )
 

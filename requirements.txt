@@ -1,9 +1,6 @@
 duckdb>=1.1
-dbt-core>=1.8
-dbt-duckdb>=1.9
 streamlit>=1.48
 pyarrow>=17
 pandas>=2.2
-odfpy>=1.4
 requests>=2.32
 openpyxl>=3.1

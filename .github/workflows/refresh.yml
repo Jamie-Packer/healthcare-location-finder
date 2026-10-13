@@ -1,0 +1,156 @@
+name: Refresh location data
+
+# 04:00 UTC on Monday is 04:00 GMT, and 05:00 during British Summer Time.
+# GitHub pauses a schedule after 60 days without repository activity, such as
+# a commit, issue, or pull request. This workflow updates the release notes on
+# every check, and opens an issue when a check fails.
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and publish even if sources match or the row count moves outside the usual band
+        type: boolean
+        default: false
+
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+
+      - name: Install build tools
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Refresh
+        id: refresh
+        env:
+          FORCE_REFRESH: ${{ inputs.force && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          python -m ingest.refresh
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          status = json.loads(Path("data/build/refresh-status.json").read_text(encoding="utf-8"))
+          Path("data/build/action.txt").write_text(status["action"], encoding="utf-8")
+          PY
+          echo "action=$(cat data/build/action.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        if: steps.refresh.outputs.action == 'publish'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(python -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
+          notes=$(python -c 'import json; m=json.load(open("data/mart/manifest.json", encoding="utf-8")); print("Location reference built", m["built_at"] + ".", m["row_counts"]["location"], "current England sites.")')
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "Location data" --notes "$notes"
+          else
+            gh release edit "$tag" --notes "$notes"
+          fi
+          gh release upload "$tag" \
+            data/mart/location.parquet \
+            data/mart/search_entity.parquet \
+            data/mart/entity_site.parquet \
+            data/mart/location_history.parquet \
+            data/mart/manifest.json \
+            --clobber
+
+      - name: Record an unchanged check
+        if: steps.refresh.outputs.action == 'skip'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(python -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
+          gh release edit "$tag" --notes "Checked $(date -u +%Y-%m-%dT%H:%M:%SZ). Sources unchanged. The previous location files stay published."
+
+      - name: Open or update the failure issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "Data refresh failed";
+            const body = [
+              "The location refresh did not publish new data. The previous release is unchanged.",
+              "",
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join("\n");
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
+
+      - name: Close the failure issue after a good run
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "Data refresh failed";
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => issue.title === title);
+            if (!existing) {
+              return;
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              body: "A later refresh finished without error. Closing.",
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              state: "closed",
+            });
+
+      - name: Upload the validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-report
+          path: data/build/validation-report.json
+          if-no-files-found: ignore

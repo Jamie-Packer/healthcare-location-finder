@@ -1,21 +1,20 @@
 """Explain how to search, what the files contain, and what each column means."""
 
-from datetime import datetime
-from pathlib import Path
-
 import streamlit as st
 
-LOCATION = Path(__file__).resolve().parents[1] / "data" / "mart" / "location.parquet"
+from data import SAMPLE_WARNING, attribution_markdown, attribution_year, currency_markdown, ensure_data
 
 
-def _built_on() -> str:
-    if not LOCATION.exists():
-        return "The location file has not been built yet."
-    built = datetime.fromtimestamp(LOCATION.stat().st_mtime)
-    return f"This copy was built on {built.strftime('%d %B %Y').lstrip('0')}."
-
+try:
+    paths = ensure_data()
+except FileNotFoundError as exc:
+    st.title("Help")
+    st.error(str(exc))
+    st.stop()
 
 st.title("Help")
+if paths.source == "sample":
+    st.warning(SAMPLE_WARNING)
 if st.button("Back to search"):
     st.switch_page("search.py")
 
@@ -38,8 +37,8 @@ Medway is a unitary authority. The Kent and Medway integrated care board does
 include Medway.
 
 The table on screen shows the first 500 sites. The keyword box shows the first
-200 strings. **Download CSV** and **Download Excel** include every site in the
-current filter.
+200 strings. **Prepare download** builds a CSV, and an Excel file when the
+extract is not too large. Those files include every site in the current filter.
 
 `match_string` is the column to copy. It is one line of keywords for that
 site: names, the parent organisation, the town, the postcode with and without
@@ -88,24 +87,16 @@ Commission location id and leave the ODS code blank, so both rows remain.
 )
 
 st.header("How current the data is")
-st.markdown(_built_on())
+st.markdown(currency_markdown(paths))
 st.markdown(
     """
-Nothing in the app refreshes on a schedule. A newer copy means downloading
-the sources again and rebuilding the location file.
-
 The Organisation Data Service reports are the England trust, trust site, and
 independent provider files as they stood when they were downloaded.
-
-Care Quality Commission rows come from the monthly active-locations
-spreadsheet, currently the 1 October 2026 file. Deactivated locations are
-kept for a later history view and are not searchable here.
-
-Area names come from the Office for National Statistics postcode lookup for
-August 2026. Searching a postcode lists the sites recorded at that postcode.
-The lookup file itself is not a list of sites.
 """
 )
+
+st.header("Sources and licence")
+st.markdown(attribution_markdown(attribution_year(paths.manifest)))
 
 st.header("Columns")
 st.markdown(
