@@ -26,7 +26,27 @@ python -m venv .venv
 .venv\Scripts\python -m streamlit run app/streamlit_app.py
 ```
 
+Use that last command. A global `streamlit` from another environment can be older than 1.48, and this app will not start on it.
+
 `python -m ingest.build --fixtures` builds a tiny sample used to check the models.
+
+## Source files
+
+Downloaded files keep the publisher's names. Those names are report ids.
+
+Organisation Data Service reports:
+
+| File | Contents |
+| --- | --- |
+| `etr.csv` | NHS trusts |
+| `ets.csv` | NHS trust sites |
+| `ephp.csv` | Independent sector healthcare providers |
+| `ephpsite.csv` | Sites of those providers |
+| `eother.csv` | Other NHS organisations, including integrated care boards |
+
+Care Quality Commission active locations are the England register of care homes, hospitals, GP practices, and other registered services. Care homes in the search come from that file. The care-home flag on each row marks them.
+
+Office for National Statistics abbreviations: `CTRY` country, `RGN` region, `CTY` county, `LAD` local authority district, `ICB` integrated care board. `NSPL` is the National Statistics Postcode Lookup.
 
 ## Data
 

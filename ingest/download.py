@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
 ODS = "https://www.odsdatasearchandexport.nhs.uk/api/getReport?report={report}"
 
+# Report ids stay as NHS England publishes them.
+# etr trusts, ets trust sites, ephp independent providers,
+# ephpsite independent-provider sites, eother other organisations.
 FILES = {
     "ods/etr.csv": ODS.format(report="etr"),
     "ods/ets.csv": ODS.format(report="ets"),
