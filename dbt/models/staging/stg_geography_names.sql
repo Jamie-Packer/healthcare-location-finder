@@ -28,6 +28,13 @@ integrated_care_boards as (
         nullif(upper(trim(ods_code)), '') as ods_code,
         nullif(trim(name), '') as name
     from {{ read_header_csv('ons/names/ICB.csv') }}
+),
+sub_icb_locations as (
+    select
+        nullif(trim(code), '') as statistical_code,
+        nullif(upper(trim(ods_code)), '') as ods_code,
+        nullif(trim(name), '') as name
+    from {{ read_header_csv('ons/names/SICBL.csv') }}
 )
 
 select
@@ -64,6 +71,14 @@ union all
 
 select 'icb', statistical_code, ods_code, name
 from integrated_care_boards
+where statistical_code is not null
+  and name is not null
+  and statistical_code not like '%99999999'
+
+union all
+
+select 'sicbl', statistical_code, ods_code, name
+from sub_icb_locations
 where statistical_code is not null
   and name is not null
   and statistical_code not like '%99999999'

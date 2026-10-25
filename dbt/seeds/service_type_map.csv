@@ -1,0 +1,18 @@
+source,category,service_type
+ciw,Care Home Service,care home
+ciw,Domiciliary Support Service,home care
+ciw,Adult Placement Service,home care
+care_inspectorate,Care Home Service,care home
+care_inspectorate,Support Service,home care
+care_inspectorate,Housing Support Service,home care
+care_inspectorate,Nurse Agency,home care
+care_inspectorate,Adult Placement Service,home care
+rqia,Nursing (NH),care home
+rqia,Residential (RC),care home
+rqia,Domiciliary Care Agency (DCA),home care
+rqia,Nursing Agency (NA),home care
+rqia,Independent Hospital (IH),other
+rqia,Independent Hospital (IH) - Dental Treatment,other
+rqia,Independent Clinic (IC),other
+rqia,Independent Medical Agency (IMA),home care
+rqia,Adult Placement Agency (APA),home care

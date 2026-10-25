@@ -66,6 +66,12 @@ CSS = f"""
 }}
 .summary span {{ color: #b9b1a2; font-family: Inter, system-ui, sans-serif; font-size: 0.95rem; }}
 
+/* Wrap filter pills instead of scrolling them sideways */
+.stApp [data-testid="stButtonGroup"] [role="toolbar"] {{
+    flex-wrap: wrap;
+    overflow: visible;
+}}
+
 .stApp [data-testid="stDataFrame"] {{
     border: 1px solid #3b362e;
     border-radius: 0.75rem;

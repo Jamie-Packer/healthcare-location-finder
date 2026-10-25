@@ -61,10 +61,23 @@ POSTCODE_COLUMNS = {
     "county_code": re.compile(r"^cty(\d{2})cd$", re.IGNORECASE),
     "local_authority_code": re.compile(r"^lad(\d{2})cd$", re.IGNORECASE),
     "icb_code": re.compile(r"^icb(\d{2})cd$", re.IGNORECASE),
+    "sicbl_code": re.compile(r"^sicbl(\d{2})cd$", re.IGNORECASE),
 }
-NAME_CODE = re.compile(r"^(CTRY|RGN|CTY|LAD|ICB)(\d{2})CD$", re.IGNORECASE)
-NAME_LABEL = re.compile(r"^(CTRY|RGN|CTY|LAD|ICB)(\d{2})NM$", re.IGNORECASE)
-NAME_ODS = re.compile(r"^ICB(\d{2})CDH$", re.IGNORECASE)
+NAME_CODE = re.compile(r"^(CTRY|RGN|CTY|LAD|ICB|SICBL)(\d{2})CD$", re.IGNORECASE)
+NAME_LABEL = re.compile(r"^(CTRY|RGN|CTY|LAD|ICB|SICBL)(\d{2})NM$", re.IGNORECASE)
+NAME_ODS = re.compile(r"^(?:ICB|SICBL)(\d{2})CDH$", re.IGNORECASE)
+_MONTH_NAMES = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+    "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+DATASTORE_SLUG = re.compile(
+    r"datastore-(\d{1,2})-([a-z]+)-(\d{4})"
+    r"|datastore-(\d{1,2})-(\d{1,2})-(\d{4})"
+    r"|datastore-(\d{1,2})([a-z]+)(\d{4})",
+    re.IGNORECASE,
+)
 HREF = re.compile(r'href="([^"]+)"', re.IGNORECASE)
 
 
@@ -274,3 +287,130 @@ def canonical_name_indexes(header: list[str]) -> dict[str, int]:
     if "code" not in mapping or "name" not in mapping:
         raise RuntimeError("Geography name file has no code and name columns")
     return mapping
+
+
+def choose_ckan_resource(resources: list[dict], pattern: str) -> dict:
+    """Pick the newest CSV whose name or URL matches."""
+    matched = [
+        item for item in resources
+        if re.search(pattern, item.get("name") or "", re.IGNORECASE)
+        or re.search(pattern, item.get("url") or "", re.IGNORECASE)
+    ]
+    if not matched:
+        raise RuntimeError(f"No catalogue resource matched {pattern}")
+
+    def is_csv(item: dict) -> bool:
+        kind = (item.get("format") or "").lower()
+        url = (item.get("url") or "").lower()
+        return kind == "csv" or url.endswith(".csv")
+
+    pool = [item for item in matched if is_csv(item)] or matched
+
+    def stamp(item: dict) -> str:
+        return str(item.get("last_modified") or item.get("created") or "")
+
+    return max(pool, key=stamp)
+
+
+def ckan_latest(session: requests.Session, base: str, package: str, pattern: str, key: str) -> RemoteFile:
+    response = session.get(
+        f"{base.rstrip('/')}/api/3/action/package_show",
+        params={"id": package},
+        timeout=(30, 60),
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("success"):
+        raise RuntimeError(f"Catalogue lookup failed for {package}")
+    chosen = choose_ckan_resource(payload["result"].get("resources") or [], pattern)
+    published = str(chosen.get("last_modified") or chosen.get("created") or "")
+    return RemoteFile(
+        key=key,
+        url=chosen["url"],
+        publisher_date=published[:10] or None,
+        modified=published,
+    )
+
+
+def datastore_date(slug: str) -> date | None:
+    """Dates are written three ways on the Care Inspectorate library index."""
+    match = DATASTORE_SLUG.search(slug or "")
+    if not match:
+        return None
+    if match.group(1):
+        month = _MONTH_NAMES.get(match.group(2).lower())
+        if month is None:
+            return None
+        return date(int(match.group(3)), month, int(match.group(1)))
+    if match.group(4):
+        return date(int(match.group(6)), int(match.group(5)), int(match.group(4)))
+    month = _MONTH_NAMES.get(match.group(8).lower())
+    if month is None:
+        return None
+    return date(int(match.group(9)), month, int(match.group(7)))
+
+
+def choose_datastore_page(html_text: str) -> tuple[date, str] | None:
+    best: tuple[date, str] | None = None
+    for href in HREF.findall(html_text):
+        url = html.unescape(href)
+        stamp = datastore_date(url)
+        if stamp is None:
+            continue
+        if url.startswith("/"):
+            url = "https://www.careinspectorate.com" + url
+        if best is None or stamp > best[0]:
+            best = (stamp, url)
+    return best
+
+
+def csv_link(html_text: str, prefer: str) -> str | None:
+    found = [html.unescape(href) for href in HREF.findall(html_text) if href.lower().split("?")[0].endswith(".csv")]
+    if not found:
+        return None
+    preferred = [url for url in found if prefer in url.lower()]
+    return (preferred or found)[-1]
+
+
+def discover_care_inspectorate(session: requests.Session, key: str) -> RemoteFile:
+    index = session.get(
+        "https://www.careinspectorate.com/index.php/publications-statistics/93-public/datastore",
+        timeout=(30, 60),
+    )
+    index.raise_for_status()
+    chosen = choose_datastore_page(index.text)
+    if chosen is None:
+        raise RuntimeError("No Care Inspectorate datastore page found")
+    stamp, page_url = chosen
+    page = session.get(page_url, timeout=(30, 60))
+    page.raise_for_status()
+    url = csv_link(page.text, "datastoreexternal.csv")
+    if url is None:
+        raise RuntimeError(f"No CSV linked from {page_url}")
+    return RemoteFile(key=key, url=url, publisher_date=stamp.isoformat())
+
+
+def discover_rqia(session: requests.Session, key: str) -> RemoteFile:
+    page = session.get("https://www.rqia.org.uk/register/", timeout=(30, 60))
+    page.raise_for_status()
+    for href in HREF.findall(page.text):
+        url = html.unescape(href)
+        if "all-registered-services.xlsx" not in url.lower():
+            continue
+        if url.startswith("/"):
+            url = "https://www.rqia.org.uk" + url
+        return RemoteFile(key=key, url=url)
+    return ckan_latest(
+        session,
+        "https://admin.opendatani.gov.uk",
+        "rqia-regulated-services",
+        r"xlsx|registered",
+        key,
+    )
+
+
+def discover_ciw(key: str) -> RemoteFile:
+    return RemoteFile(
+        key=key,
+        url="https://digital.careinspectorate.wales/api/DataExport",
+    )

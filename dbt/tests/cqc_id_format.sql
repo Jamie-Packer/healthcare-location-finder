@@ -1,4 +1,7 @@
-select location_id, cqc_location_id
+select location_id, regulator_id
 from {{ ref('location') }}
-where cqc_location_id is not null
-    and not regexp_full_match(cqc_location_id, '[A-Z0-9-]+')
+where regulator = 'CQC'
+    and (
+        regulator_id is null
+        or not regexp_full_match(regulator_id, '[A-Z0-9-]+')
+    )

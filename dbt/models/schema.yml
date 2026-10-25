@@ -13,12 +13,12 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ["England"]
+                values: ["England", "Wales", "Scotland", "Northern Ireland"]
       - name: service_type
         data_tests:
           - accepted_values:
               arguments:
-                values: ["hospital", "care home", "gp", "other"]
+                values: ["hospital", "care home", "gp", "home care", "other"]
   - name: stg_cqc_deactivated
     columns:
       - name: cqc_location_id

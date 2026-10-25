@@ -1,4 +1,4 @@
-select location_id, ods_code
+select location_id, nhs_code
 from {{ ref('location') }}
-where ods_code is not null
-    and not regexp_full_match(ods_code, '[A-Z0-9]{3,12}')
+where nhs_code is not null
+    and not regexp_full_match(nhs_code, '[A-Z0-9]{3,12}')

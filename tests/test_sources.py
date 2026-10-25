@@ -50,7 +50,7 @@ def test_nspl_choice_ignores_user_guides_and_older_editions():
 
 
 def test_postcode_columns_prefer_the_later_year():
-    header = ["pcds", "ctry25cd", "ctry26cd", "rgn26cd", "cty26cd", "lad26cd", "icb26cd", "doterm"]
+    header = ["pcds", "ctry25cd", "ctry26cd", "rgn26cd", "cty26cd", "lad26cd", "icb26cd", "sicbl26cd", "doterm"]
     assert pick_postcode_columns(header)["country_code"] == "ctry26cd"
 
 
@@ -69,8 +69,8 @@ def test_icb_name_keeps_the_ods_code():
 def test_postcode_parquet_keeps_the_newer_country_code(tmp_path):
     extracted = tmp_path / "postcodes.csv"
     extracted.write_text(
-        "pcds,ctry25cd,ctry26cd,rgn26cd,cty26cd,lad26cd,icb26cd,doterm\n"
-        "TN24 0LZ,OLD,E92000001,E12000008,E10000016,E07000001,E54000032,\n",
+        "pcds,ctry25cd,ctry26cd,rgn26cd,cty26cd,lad26cd,icb26cd,sicbl26cd,doterm\n"
+        "TN24 0LZ,OLD,E92000001,E12000008,E10000016,E07000001,E54000032,,\n",
         encoding="utf-8",
     )
     parquet = tmp_path / "postcodes.parquet"

@@ -15,73 +15,101 @@ except FileNotFoundError as exc:
 st.title("Full guide")
 if paths.source == "sample":
     st.warning(SAMPLE_WARNING)
-if st.button("Back to search"):
+if st.button("Back to search", icon=":material/arrow_back:"):
     st.switch_page("search.py")
 
 st.header("How to use it")
 st.markdown(
     """
-Type a place or a name and press Enter. You can search by county, trust,
-hospital, postcode, ODS code or CQC location id. (ODS is the NHS Organisation
-Data Service. CQC is the Care Quality Commission.)
+1. **Search.** Type a place or a name and press Enter. That can be a county, a
+   trust, a health board, a hospital, a postcode, an NHS code or a regulator id.
+   NHS codes come from the Organisation Data Service or Public Health Scotland.
+   Regulator ids come from the Care Quality Commission, Care Inspectorate Wales,
+   the Care Inspectorate or RQIA.
+2. **Pick a match.** The list shows up to 30 results. A match can be a country,
+   region, county, local authority, integrated care board, health board, HSC
+   trust area, provider or single site. The table then lists the current sites
+   under it.
+3. **Narrow it down.** Leave **Service** and **Country** empty to keep
+   everything, or pick the ones you want. **Columns** changes what the table and
+   the download show, and **Default columns** puts the usual set back.
+4. **Download.** The screen shows the first 500 sites. **Prepare download**
+   builds a CSV, plus an Excel file when the extract is small enough. Both include
+   every site in your selection, one row per site.
 
-1. **Pick a match.** The list shows up to 30 results. A result can be a country,
-   region, county, local authority, integrated care board (ICB), provider or a
-   single site. The table then lists the current sites under it.
-2. **Choose services.** Leave the service filter empty to see every site. Select
-   one or more of hospital, care home, GP and other to narrow the table.
-3. **Download the table.** The screen shows the first 500 sites. **Prepare
-   download** builds a CSV, plus an Excel file when the extract is small enough.
-   Both include every site in your selection, one row per site.
+The flag shows the country of each site. Northern Ireland uses the Union Flag.
+Downloads keep the country name as text.
 
-Counties follow the county boundary, so Kent does not include Medway. Medway is
-its own unitary authority. The Kent and Medway ICB covers both.
+Counties and regions are only filled in England. Kent does not include Medway,
+which is its own unitary authority, but the Kent and Medway integrated care board
+covers both.
 
-**`match_string` is the last column in that file.** It is one line of keywords
-for a site: its names, parent organisation, town, postcode (with and without
-the space) and codes. Punctuation and common words such as hospital, NHS and
-trust are removed.
+**The keyword string.** `match_string` is always the last column. It holds one
+line of keywords for each site: its names, parent organisation, town, postcode
+(with and without the space) and codes. Punctuation and common words such as
+hospital, NHS and trust are removed. The street address is left out.
 """
 )
 
 st.header("What you can and cannot find")
 st.markdown(
     """
-**Included: current sites in England**
+**Included: current sites in England, Wales, Scotland and Northern Ireland**
 
-- NHS trusts and independent healthcare providers, with their sites (ODS).
-- Every location registered with the CQC, including care homes, hospitals, GP
-  practices and other services.
-- The local authority, county, region and ICB for each postcode.
+- **England:** NHS trusts and independent healthcare providers with their sites,
+  and every location registered with the Care Quality Commission.
+- **Wales:** health boards and their sites, GP practices, and adult services
+  registered with Care Inspectorate Wales. Velindre and Welsh Ambulance Service
+  sites come from the NHS site list.
+- **Scotland:** NHS hospitals and GP practices from Public Health Scotland, and
+  adult services registered with the Care Inspectorate.
+- **Northern Ireland:** GP practices, adult services registered with RQIA, and a
+  checked list of HSC hospitals. The hospital list is not a live feed, and the
+  build warns when one of its postcodes is retired.
+- **Every site:** the local authority for its postcode, and a health area. That is
+  an integrated care board in England, a health board in Wales and Scotland, or an
+  HSC trust area in Northern Ireland.
 
-**Not included yet**
+Country, local authority and health area all come from the postcode. A service
+registered in one country with an office over the border appears under the
+country of its office.
 
-- Scotland, Wales and Northern Ireland.
-- Closed or deactivated sites, and older names. You cannot look up a site as it
-  was in the past.
-- Mergers and renames. A renamed organisation is not linked to the one it
-  replaced.
-- Free-text matching. The app finds places in this register. It does not
-  compare a sentence from another system. Download the table and match it
-  elsewhere.
+**Known gaps**
+
+- Independent hospitals and clinics in Wales and Scotland. Healthcare
+  Inspectorate Wales and Healthcare Improvement Scotland do not publish a bulk list.
+- Community sites in Northern Ireland. There is no open list of them, and the
+  hospital list cannot tell when a hospital closes.
+- Welsh branch surgeries, which are not in the GP practice file.
+- Pharmacies and dental practices as their own category. A dental service
+  registered as a care location is listed as other.
+- Closed sites and older names. You cannot look up a site as it was in the past.
+- Mergers and renames. A renamed organisation is not linked to the one it replaced.
+- Free-text matching. The app finds places in this register but does not compare
+  text from another system. Download the table and match it elsewhere.
 - Named people, such as registered managers.
-- NHS GP lists, schools, prisons and Welsh health boards. A GP practice appears
-  only if the CQC registers that location.
 
 **How services are decided**
 
-- **Hospital:** the name or CQC category contains "hospital".
-- **Care home:** the CQC care-home flag is yes.
-- **GP:** the CQC category is a GP practice.
-- **Other:** everything else that is open, such as clinics and offices whose
-  names do not say hospital.
+- **Hospital:** the name or the source category says hospital. A dental service
+  registered under an independent-hospital heading stays other. In Northern
+  Ireland most registered independent hospitals are laser and skin clinics, so
+  only those with hospital in the name count.
+- **Care home:** a care home for adults, with or without nursing.
+- **GP:** a GP practice.
+- **Home care:** the postcode is an office and the care happens elsewhere. That
+  covers domiciliary care, nurse agencies and supported living, including
+  community-based adult social care in England.
+- **Other:** clinics, offices and any other registered service in scope.
 
 **Why a site can appear twice**
 
-A CQC location is joined to an ODS site only when its location ODS code matches
-exactly one open ODS site. If that code is blank, both rows stay. Some NHS
-hospitals, such as William Harvey Hospital, keep their ODS code in the CQC
-location id and leave the ODS code blank, so they show up as two rows.
+In England, a Care Quality Commission location is joined to an NHS site only when
+its organisation code matches exactly one open site. If that code is blank, both
+rows stay. Some NHS hospitals keep their organisation code in the regulator id
+and leave the organisation code blank, so they appear twice. Wales, Scotland and
+Northern Ireland are not merged across sources, so two sources can list the same
+place.
 """
 )
 
@@ -96,18 +124,25 @@ st.markdown(
     """
 | Column | Meaning |
 | --- | --- |
-| `name` | Site name. When ODS and CQC records are combined, the CQC name is kept. |
-| `parent_name` | Organisation that runs the site: the ODS parent, or the CQC provider when there is no ODS parent. |
+| `name` | Site name. When an England NHS site and a Care Quality Commission record are combined, the Care Quality Commission name is kept. |
+| `parent_name` | Organisation that runs the site: the NHS parent, the health board, or the registered provider. |
+| `address` | Street address. It is not part of the keyword string. |
+| `town` | Town or city. |
 | `postcode` | Site postcode. |
-| `town` | Town or city from the address. |
-| `local_authority` | Local authority for the postcode. If the postcode is not in the postcode lookup, the CQC value is used. |
-| `region` | Region for the postcode, with the same CQC fallback. |
-| `icb` | Integrated care board for the postcode, the NHS commissioning area for that address. It is not always the organisation that runs the site. |
-| `ods_code` | ODS code, when the site is on the ODS list. |
-| `cqc_location_id` | CQC location id, when the site is on the CQC register. |
-| `service_type` | `hospital`, `care home`, `gp` or `other`. |
-| `valid_from` | Start date from the source: the CQC registration date, or the ODS legal start date for sites only on the ODS list. The CQC date wins when both exist. |
-| `valid_to` | End date. Blank means the site is still open. Closed sites are not listed, so this column is empty for now. |
-| `match_string` | Upper-case keywords with punctuation and common words removed: site name, ODS name, brand, parent, town, postcode with and without the space, ODS code and CQC location id. |
+| `country` | England, Wales, Scotland or Northern Ireland, from the postcode. |
+| `local_authority` | Local authority for the postcode. For an England site missing from the postcode lookup, the Care Quality Commission value is used. |
+| `county` | County for an England postcode. Blank elsewhere. |
+| `region` | Region for an England postcode. Blank elsewhere. |
+| `health_area` | Integrated care board, health board or HSC trust area. Usually from the postcode, so it may not be the organisation that runs the site. |
+| `nhs_code` | NHS organisation code from the Organisation Data Service or Public Health Scotland, when the site has one. |
+| `regulator` | Care Quality Commission, CIW, Care Inspectorate or RQIA, when the site comes from that register. |
+| `regulator_id` | The id on that register. |
+| `service_type` | `hospital`, `care home`, `gp`, `home care` or `other`. |
+| `source` | The register the row came from. `ods+cqc` means the England records were combined. |
+| `valid_from` | Start date from the source, where the publisher gives one. |
+| `valid_to` | End date. Blank means the site is open. Closed sites are not listed yet, so this is always blank for now. |
+| `match_string` | Upper-case keywords with punctuation and common words removed: site name, other names, parent, town, postcode with and without the space, NHS code and regulator id. |
+
+More columns, such as codes for each area, are available under **Columns** on the search page.
 """
 )

@@ -52,14 +52,16 @@ entities as (
     union all
 
     select
-        'icb:' || icb_code,
-        'icb',
-        icb_name,
-        coalesce(icb_ods_code, icb_code),
-        upper(concat_ws(' ', icb_name, icb_code, icb_ods_code)),
+        health_area_type || ':' || health_area_code,
+        health_area_type,
+        health_area_name,
+        coalesce(health_area_ods_code, health_area_code),
+        upper(concat_ws(' ', health_area_name, health_area_code, health_area_ods_code)),
         location_id
     from sites
-    where icb_code is not null and icb_name is not null
+    where health_area_code is not null
+        and health_area_name is not null
+        and health_area_type is not null
 
     union all
 
@@ -91,8 +93,8 @@ entities as (
         'site:' || location_id,
         'site',
         name,
-        coalesce(ods_code, cqc_location_id),
-        upper(concat_ws(' ', name, ods_code, cqc_location_id, postcode, postcode_compact)),
+        coalesce(nhs_code, regulator_id),
+        upper(concat_ws(' ', name, nhs_code, regulator_id, postcode, postcode_compact)),
         location_id
     from sites
     where name is not null
