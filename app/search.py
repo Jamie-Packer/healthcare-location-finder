@@ -2,20 +2,37 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import re
 from io import BytesIO
+from pathlib import Path
 
 import duckdb
 import pandas as pd
 import streamlit as st
 
 from data import SAMPLE_WARNING, attribution_markdown, attribution_year, ensure_data
-from match_text import download_stem, strip_stopwords
+from match_text import ALL_COLUMNS, DEFAULT_COLUMNS, chosen_columns, download_stem, strip_stopwords
 
+
+def _flag_uri(name: str) -> str:
+    path = Path(__file__).resolve().parent / "assets" / "flags" / name
+    payload = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/svg+xml;base64,{payload}"
+
+
+FLAGS = {
+    "England": _flag_uri("england.svg"),
+    "Scotland": _flag_uri("scotland.svg"),
+    "Wales": _flag_uri("wales.svg"),
+    "Northern Ireland": _flag_uri("united-kingdom.svg"),
+}
 TYPE_LABELS = {
     "country": "Country",
     "region": "Region",
+    "health_board": "Health board",
+    "hsc_trust": "HSC trust area",
     "icb": "Integrated care board",
     "county": "County",
     "local_authority": "Local authority",
@@ -24,24 +41,39 @@ TYPE_LABELS = {
     "site": "Site",
 }
 TYPE_ORDER = list(TYPE_LABELS)
+COUNTRIES = ("England", "Wales", "Scotland", "Northern Ireland")
 SERVICES = {
     "hospital": "Hospital",
     "care home": "Care home",
     "gp": "GP",
+    "home care": "Home care",
     "other": "Other",
 }
-EXAMPLES = ("Kent", "East Kent Hospitals", "TN24 0LZ")
-EXPORT_COLUMNS = {
+EXAMPLES = ("Kent", "NHS Lothian", "Cardiff", "Belfast")
+COLUMN_LABELS = {
     "name": "name",
     "parent_name": "parent_name",
-    "postcode": "postcode",
+    "address": "address",
     "town": "town",
+    "postcode": "postcode",
+    "postcode_compact": "postcode_compact",
+    "country_name": "country",
     "local_authority_name": "local_authority",
+    "local_authority_code": "local_authority_code",
+    "county_name": "county",
+    "county_code": "county_code",
     "region_name": "region",
-    "icb_name": "icb",
-    "ods_code": "ods_code",
-    "cqc_location_id": "cqc_location_id",
+    "region_code": "region_code",
+    "health_area_name": "health_area",
+    "health_area_type": "health_area_type",
+    "health_area_code": "health_area_code",
+    "health_area_ods_code": "health_area_ods_code",
+    "parent_code": "parent_code",
+    "nhs_code": "nhs_code",
+    "regulator": "regulator",
+    "regulator_id": "regulator_id",
     "service_type": "service_type",
+    "source": "source",
     "valid_from": "valid_from",
     "valid_to": "valid_to",
     "match_string": "match_string",
@@ -54,15 +86,15 @@ TABLE_ROWS = 500
 
 GUIDE = """
 1. **Search.** Type a place or a name: a county, a trust, a hospital, a postcode,
-   an ODS code or a CQC location id.
-2. **Pick a match.** The list can include a region, a county, a local authority,
-   an integrated care board, a provider or a single site.
-3. **Choose services.** Leave the service filter empty to see every site, or
-   pick one or more types.
-4. **Download the table.** Prepare a CSV, or an Excel file when the extract is
-   small enough. The file has one row per site in your selection.
+   an NHS code or a regulator id.
+2. **Pick a match.** A match can be a country, a health board, an integrated care
+   board, an HSC trust area, a provider or a single site.
+3. **Narrow it down.** Pick services and countries, or leave them empty to keep
+   everything. **Columns** changes what the table shows.
+4. **Download.** Prepare a CSV, or an Excel file when the extract is small enough.
+   It has one row per site, with the columns you chose.
 
-**Full guide**, top right, covers what is and is not included, and what each column means.
+**Full guide**, top right, covers what is included and what each column means.
 """
 
 
@@ -101,11 +133,20 @@ def _search(search_path: str, query: str, stamp: str) -> pd.DataFrame:
     ).df()
 
 
-def _where(services: tuple[str, ...]) -> tuple[str, list[str]]:
-    if not services:
+def _where(services: tuple[str, ...], countries: tuple[str, ...]) -> tuple[str, list[str]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    if services:
+        marks = ", ".join("?" for _ in services)
+        clauses.append(f"location.service_type in ({marks})")
+        params.extend(services)
+    if countries:
+        marks = ", ".join("?" for _ in countries)
+        clauses.append(f"location.country_name in ({marks})")
+        params.extend(countries)
+    if not clauses:
         return "", []
-    marks = ", ".join("?" for _ in services)
-    return f"and location.service_type in ({marks})", list(services)
+    return "and " + " and ".join(clauses), params
 
 
 def _query_sites(
@@ -113,33 +154,54 @@ def _query_sites(
     location_path: str,
     entity_id: str,
     services: tuple[str, ...],
+    countries: tuple[str, ...],
+    columns: tuple[str, ...],
     limit: int | None,
 ) -> pd.DataFrame:
-    service_sql, service_params = _where(services)
-    columns = ", ".join(f"location.{name}" for name in EXPORT_COLUMNS)
+    filter_sql, filter_params = _where(services, countries)
+    selected = ", ".join(f"location.{name}" for name in columns)
     limit_sql = f"limit {int(limit)}" if limit else ""
     frame = _connection().cursor().execute(
         f"""
-        select {columns}
+        select {selected}
         from read_parquet(?) as links
         inner join read_parquet(?) as location
             on links.location_id = location.location_id
         where links.entity_id = ?
-        {service_sql}
+        {filter_sql}
         order by location.name
         {limit_sql}
         """,
-        [links_path, location_path, entity_id, *service_params],
+        [links_path, location_path, entity_id, *filter_params],
     ).df()
-    frame = frame.rename(columns=EXPORT_COLUMNS)
+    frame = frame.rename(columns=COLUMN_LABELS)
     if "match_string" in frame.columns:
         frame["match_string"] = frame["match_string"].map(strip_stopwords)
     return frame
 
 
+def _with_flags(frame: pd.DataFrame) -> pd.DataFrame:
+    if "country" not in frame.columns:
+        return frame
+    shown = frame.copy()
+    shown.insert(
+        0,
+        "flag",
+        shown["country"].map(lambda name: FLAGS.get(name)),
+    )
+    return shown
+
+
 @st.cache_data(show_spinner=False, max_entries=256)
-def _count(links_path: str, location_path: str, entity_id: str, services: tuple[str, ...], stamp: str) -> int:
-    service_sql, service_params = _where(services)
+def _count(
+    links_path: str,
+    location_path: str,
+    entity_id: str,
+    services: tuple[str, ...],
+    countries: tuple[str, ...],
+    stamp: str,
+) -> int:
+    filter_sql, filter_params = _where(services, countries)
     row = _connection().cursor().execute(
         f"""
         select count(*)
@@ -147,9 +209,9 @@ def _count(links_path: str, location_path: str, entity_id: str, services: tuple[
         inner join read_parquet(?) as location
             on links.location_id = location.location_id
         where links.entity_id = ?
-        {service_sql}
+        {filter_sql}
         """,
-        [links_path, location_path, entity_id, *service_params],
+        [links_path, location_path, entity_id, *filter_params],
     ).fetchone()
     return int(row[0])
 
@@ -160,9 +222,28 @@ def _preview(
     location_path: str,
     entity_id: str,
     services: tuple[str, ...],
+    countries: tuple[str, ...],
+    columns: tuple[str, ...],
     stamp: str,
 ) -> pd.DataFrame:
-    return _query_sites(links_path, location_path, entity_id, services, TABLE_ROWS)
+    body = [name for name in columns if name != "match_string"]
+    if "country_name" not in body:
+        body.append("country_name")
+    frame = _query_sites(
+        links_path,
+        location_path,
+        entity_id,
+        services,
+        countries,
+        tuple(body + ["match_string"]),
+        TABLE_ROWS,
+    )
+    shown = _with_flags(frame)
+    if "country_name" not in columns and "country" in shown.columns:
+        shown = shown.drop(columns=["country"])
+    text = [name for name in shown.columns if name != "flag" and pd.api.types.is_string_dtype(shown[name])]
+    shown[text] = shown[text].fillna("")
+    return shown
 
 
 def _excel(frame: pd.DataFrame) -> bytes:
@@ -180,10 +261,20 @@ def _use_example(text: str) -> None:
     st.session_state["query"] = text
 
 
+def _reset_columns() -> None:
+    st.session_state["columns"] = list(DEFAULT_COLUMNS)
+
+
 def _service_summary(services: tuple[str, ...]) -> str:
     if not services:
         return "all service types"
     return ", ".join(label for name, label in SERVICES.items() if name in services)
+
+
+def _country_summary(countries: tuple[str, ...]) -> str:
+    if not countries:
+        return "all countries"
+    return ", ".join(countries)
 
 
 def main() -> None:
@@ -199,7 +290,7 @@ def main() -> None:
     with action:
         if st.button("Full guide", width="stretch"):
             st.switch_page("help.py")
-    st.html('<p class="version">v0.1 · England · current sites</p>')
+    st.html('<p class="version">v0.2 · UK · current sites</p>')
     st.html(
         '<p class="lede">Find current healthcare sites and download a table of the ones you select.</p>'
     )
@@ -217,13 +308,25 @@ def main() -> None:
     year = attribution_year(paths.manifest)
     stamp = f"{paths.source}|{paths.manifest.get('built_at', '')}"
 
-    search_column, service_column = st.columns([3, 2], gap="large")
+    search_column, column_column = st.columns([5, 1], vertical_alignment="bottom")
     with search_column:
         query = st.text_input(
             "Location",
             key="query",
-            placeholder="Kent, a trust, a hospital, or a postcode",
+            placeholder="Kent, NHS Lothian, Cardiff, or a postcode",
         )
+    st.session_state.setdefault("columns", list(DEFAULT_COLUMNS))
+    with column_column:
+        with st.popover("Columns", icon=":material/view_column:", width="stretch"):
+            selected_column_names = st.multiselect(
+                "Table and download columns",
+                options=list(ALL_COLUMNS),
+                format_func=COLUMN_LABELS.get,
+                key="columns",
+            )
+            st.caption("The keyword string, `match_string`, always comes last.")
+            st.button("Default columns", on_click=_reset_columns, width="stretch")
+    service_column, country_column = st.columns(2, gap="medium")
     with service_column:
         selected_services = st.pills(
             "Service",
@@ -233,13 +336,23 @@ def main() -> None:
             key="services",
             help="Leave empty to include every service type.",
         )
+    with country_column:
+        selected_countries = st.pills(
+            "Country",
+            options=list(COUNTRIES),
+            selection_mode="multi",
+            key="countries",
+            help="Leave empty to include every UK country.",
+        )
     services = tuple(sorted(selected_services or []))
+    countries = tuple(selected_countries or [])
+    columns = chosen_columns(selected_column_names)
 
     if len(query.strip()) < 2:
         st.caption("Type at least two characters, or try an example.")
-        columns = st.columns([1, 2, 1.4, 5])
-        for column, example in zip(columns, EXAMPLES):
-            column.button(example, on_click=_use_example, args=(example,), key=f"example-{example}")
+        with st.container(horizontal=True):
+            for example in EXAMPLES:
+                st.button(example, on_click=_use_example, args=(example,), key=f"example-{example}")
         _footer(year)
         return
 
@@ -259,30 +372,41 @@ def main() -> None:
 
     links_path = paths.links.as_posix()
     location_path = paths.location.as_posix()
-    total = _count(links_path, location_path, selected.entity_id, services, stamp)
+    total = _count(links_path, location_path, selected.entity_id, services, countries, stamp)
     place = html.escape(str(selected["name"]))
     st.html(
         f'<div class="summary">{total:,} current sites '
-        f"<span>in {place} · {html.escape(_service_summary(services))}</span></div>"
+        f"<span>in {place} · {html.escape(_service_summary(services))} · "
+        f"{html.escape(_country_summary(countries))}</span></div>"
     )
     if total == 0:
-        st.info("No sites match this place and service. Remove a service filter to widen it.")
+        st.info("No sites match this place and filter. Clear a country or service to widen it.")
         _footer(year)
         return
 
-    sites = _preview(links_path, location_path, selected.entity_id, services, stamp)
-    st.dataframe(sites, width="stretch", hide_index=True)
-    if total > TABLE_ROWS:
-        st.caption(f"Showing the first {TABLE_ROWS} sites. The download includes all {total:,}.")
-
-    st.caption("Download one row per site, for every site in this filter.")
-    if total > LARGE_EXPORT_ROWS:
-        st.warning(f"{total:,} rows. Preparing a download can take a moment.")
+    sites = _preview(
+        links_path, location_path, selected.entity_id, services, countries, columns, stamp
+    )
+    st.dataframe(
+        sites,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "flag": st.column_config.ImageColumn(" ", help="Country", width="small"),
+        },
+    )
     excel_ok = total <= EXCEL_MAX_ROWS
+    if total > TABLE_ROWS:
+        note = f"Showing the first {TABLE_ROWS} sites. The download has all {total:,}, one row per site."
+    else:
+        note = "The download has one row for every site in this filter."
     if not excel_ok:
-        st.caption("This extract is too large for Excel. Download CSV.")
+        note += " It is too large for Excel, so it comes as CSV only."
+    elif total > LARGE_EXPORT_ROWS:
+        note += f" Preparing {total:,} rows can take a moment."
+    st.caption(note)
 
-    token = f"{selected.entity_id}|{','.join(services)}"
+    token = f"{selected.entity_id}|{','.join(services)}|{','.join(countries)}|{','.join(columns)}"
     if st.session_state.get("export_token") != token:
         st.session_state["export_token"] = token
         st.session_state.pop("export_csv", None)
@@ -290,29 +414,33 @@ def main() -> None:
         st.session_state.pop("export_stem", None)
 
     file_stem = download_stem(selected["name"])
-    if st.button("Prepare download"):
-        with st.spinner("Preparing your files..."):
-            everything = _query_sites(links_path, location_path, selected.entity_id, services, None)
-            st.session_state["export_csv"] = everything.to_csv(index=False).encode("utf-8")
-            st.session_state["export_xlsx"] = _excel(everything) if excel_ok else None
-            st.session_state["export_stem"] = file_stem
+    with st.container(horizontal=True):
+        if st.button("Prepare download", type="primary"):
+            with st.spinner("Preparing your files..."):
+                everything = _query_sites(
+                    links_path, location_path, selected.entity_id, services, countries, columns, None
+                )
+                st.session_state["export_csv"] = everything.to_csv(index=False).encode("utf-8")
+                st.session_state["export_xlsx"] = _excel(everything) if excel_ok else None
+                st.session_state["export_stem"] = file_stem
 
-    if st.session_state.get("export_csv") and st.session_state.get("export_token") == token:
-        stem = st.session_state.get("export_stem") or file_stem
-        left, right = st.columns(2)
-        left.download_button(
-            "Download CSV",
-            st.session_state["export_csv"],
-            file_name=f"{stem}.csv",
-            mime="text/csv",
-        )
-        if st.session_state.get("export_xlsx"):
-            right.download_button(
-                "Download Excel",
-                st.session_state["export_xlsx"],
-                file_name=f"{stem}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        if st.session_state.get("export_csv") and st.session_state.get("export_token") == token:
+            stem = st.session_state.get("export_stem") or file_stem
+            st.download_button(
+                "Download CSV",
+                st.session_state["export_csv"],
+                file_name=f"{stem}.csv",
+                mime="text/csv",
+                icon=":material/download:",
             )
+            if st.session_state.get("export_xlsx"):
+                st.download_button(
+                    "Download Excel",
+                    st.session_state["export_xlsx"],
+                    file_name=f"{stem}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    icon=":material/download:",
+                )
 
     _footer(year)
 

@@ -8,6 +8,8 @@ select
     nullif(upper(trim(ods_code)), '') as ods_code,
     nullif(trim(postcode), '') as postcode,
     nullif(trim(town), '') as town,
+    nullif(trim(address_1), '') as address_1,
+    nullif(trim(address_2), '') as address_2,
     nullif(
         nullif(regexp_replace(trim(brand_name), '^BRAND\s+', ''), ''),
         '-'

@@ -7,7 +7,7 @@ from streamlit.testing.v1 import AppTest
 
 from app import data as app_data
 from app.data import LocationData, currency_markdown, edition_label
-from app.match_text import download_stem, strip_stopwords
+from app.match_text import chosen_columns, download_stem, strip_stopwords
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,12 +42,14 @@ def test_currency_uses_the_manifest_dates(tmp_path):
                 "nspl_edition": "NSPL_AUG_2026",
                 "sources": [
                     {"key": "cqc/active_locations.ods", "publisher_date": "2026-10-01"},
+                    {"key": "rqia/services.csv", "status": "fallback", "stale_since": "2026-10-06"},
                 ],
             },
         )
     )
     assert "13 October 2026" in text
-    assert "1 October 2026" in text
+    assert "active locations: 1 October 2026" in text
+    assert "**RQIA services** is stale since 6 October 2026" in text
     assert "August 2026" in text
     assert "Monday at 04:00 UTC" in text
 
@@ -68,6 +70,12 @@ def test_match_string_drops_common_words():
     assert strip_stopwords("TN24 0LZ") == "TN24 0LZ"
 
 
+def test_chosen_columns_keep_the_keyword_string_last():
+    assert chosen_columns([])[-1] == "match_string"
+    assert "country_name" in chosen_columns([])
+    assert chosen_columns(["postcode", "match_string", "name"]) == ("name", "postcode", "match_string")
+
+
 def test_download_stem_follows_the_place_name():
     assert download_stem("Kent") == "Kent"
     assert download_stem('East Kent / "Hospitals"') == "East Kent Hospitals"
@@ -85,7 +93,7 @@ def test_download_uses_the_matching_place_name(fixture_mart):
 def test_version_label_and_table_download(fixture_mart):
     app = _search_app(fixture_mart)
     html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
-    assert "v0.1 · England · current sites" in html_text
+    assert "v0.2 · UK · current sites" in html_text
     app.text_input[0].set_value("Kent").run()
     assert not app.code
     assert any(button.label == "Prepare download" for button in app.button)

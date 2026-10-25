@@ -42,5 +42,5 @@ def test_closed_snapshot_row_survives_the_next_build(fixture_mart, tmp_path):
     export_history(database, exported)
     found = duckdb.sql(
         f"select count(*) from read_parquet('{exported.as_posix()}') where dbt_scd_id = '{token}'"
-    ).fetchone()[0]
+    ).fetchall()[0][0]
     assert found == 1

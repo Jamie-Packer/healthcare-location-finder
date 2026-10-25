@@ -1,0 +1,34 @@
+name,town,postcode,trust_code,checked_on
+Royal Victoria Hospital,Belfast,BT12 6BA,ZT001,2026-10-25
+Belfast City Hospital,Belfast,BT9 7AB,ZT001,2026-10-25
+Mater Infirmorum Hospital,Belfast,BT14 6AB,ZT001,2026-10-25
+Royal Belfast Hospital for Sick Children,Belfast,BT12 6BE,ZT001,2026-10-25
+Musgrave Park Hospital,Belfast,BT9 7JB,ZT001,2026-10-25
+Knockbracken Healthcare Park,Belfast,BT8 8BH,ZT001,2026-10-25
+Muckamore Abbey Hospital,Antrim,BT41 4SH,ZT001,2026-10-25
+Antrim Area Hospital,Antrim,BT41 2RL,ZT002,2026-10-25
+Causeway Hospital,Coleraine,BT52 1HS,ZT002,2026-10-25
+Mid-Ulster Hospital,Magherafelt,BT45 5EX,ZT002,2026-10-25
+Whiteabbey Hospital,Newtownabbey,BT37 9RH,ZT002,2026-10-25
+Holywell Hospital,Antrim,BT41 2RJ,ZT002,2026-10-25
+Braid Valley Care Complex,Ballymena,BT43 6HL,ZT002,2026-10-25
+Dalriada Hospital,Ballycastle,BT54 6EY,ZT002,2026-10-25
+Robinson Hospital,Ballymoney,BT53 6HB,ZT002,2026-10-25
+Moyle Hospital,Larne,BT40 1RP,ZT002,2026-10-25
+Craigavon Area Hospital,Craigavon,BT63 5QQ,ZT003,2026-10-25
+Daisy Hill Hospital,Newry,BT35 8DR,ZT003,2026-10-25
+South Tyrone Hospital,Dungannon,BT71 4AU,ZT003,2026-10-25
+Lurgan Hospital,Lurgan,BT66 8TL,ZT003,2026-10-25
+St Luke's Hospital,Armagh,BT61 7NQ,ZT003,2026-10-25
+Armagh Community Hospital,Armagh,BT61 7EG,ZT003,2026-10-25
+Ulster Hospital,Dundonald,BT16 1RH,ZT004,2026-10-25
+Lagan Valley Hospital,Lisburn,BT28 1JP,ZT004,2026-10-25
+Downe Hospital,Downpatrick,BT30 6RL,ZT004,2026-10-25
+Ards Community Hospital,Newtownards,BT23 4AS,ZT004,2026-10-25
+Bangor Community Hospital,Bangor,BT20 4TA,ZT004,2026-10-25
+Altnagelvin Area Hospital,Londonderry,BT47 6SB,ZT005,2026-10-25
+South West Acute Hospital,Enniskillen,BT74 6DN,ZT005,2026-10-25
+Omagh Hospital and Primary Care Complex,Omagh,BT79 0NR,ZT005,2026-10-25
+Tyrone and Fermanagh Hospital,Omagh,BT79 0NS,ZT005,2026-10-25
+Waterside Hospital,Londonderry,BT47 6WH,ZT005,2026-10-25
+Grangewood Hospital,Londonderry,BT47 6WJ,ZT005,2026-10-25

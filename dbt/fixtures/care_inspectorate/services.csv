@@ -1,0 +1,2 @@
+service_id,name,service_type,service_subtype,address_1,address_2,address_3,town,postcode,provider_id,provider_name,registered_on,health_board_name,council_name
+CS2000000001,Example Edinburgh Care Home,Care Home Service,Older People,Example Place,,,Edinburgh,EH1 2NG,SP2000000001,Example Scottish Care,01/04/2010,Lothian,City of Edinburgh

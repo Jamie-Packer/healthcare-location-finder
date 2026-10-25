@@ -13,6 +13,7 @@ import io
 import re
 import zipfile
 from pathlib import Path
+from urllib.parse import urlparse
 
 import duckdb
 import requests
@@ -20,29 +21,27 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from ingest.cqc_spreadsheet import ACTIVE_COLUMNS, DEACTIVATED_COLUMNS, convert_locations
+from ingest.convert import CONVERTERS
+from ingest.registry import SPECS, SourceSpec
 from ingest.sources import (
     CQC_ACTIVE,
     CQC_DEACTIVATED,
     NSPL_KEY,
+    ODS,
     RemoteFile,
     canonical_name_indexes,
-    discover_sources,
+    ckan_latest,
+    discover_care_inspectorate,
+    discover_ciw,
+    discover_cqc,
+    discover_nspl,
+    discover_rqia,
     pick_postcode_columns,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
-NAME_CODES = ("CTRY", "CTY", "ICB", "LAD", "RGN")
-MIN_BYTES = {
-    "ods/etr.csv": 1_000,
-    "ods/ets.csv": 10_000,
-    "ods/ephp.csv": 1_000,
-    "ods/ephpsite.csv": 10_000,
-    "ods/eother.csv": 1_000,
-    CQC_ACTIVE: 1_000_000,
-    CQC_DEACTIVATED: 1_000_000,
-    NSPL_KEY: 50_000_000,
-}
+NAME_CODES = ("CTRY", "CTY", "ICB", "LAD", "RGN", "SICBL")
 
 
 def http_session() -> requests.Session:
@@ -56,7 +55,7 @@ def http_session() -> requests.Session:
         raise_on_status=False,
     )
     session = requests.Session()
-    session.headers["User-Agent"] = "healthcare-location-reference/0.1"
+    session.headers["User-Agent"] = "healthcare-location-reference/0.2"
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
@@ -110,12 +109,13 @@ def apply_download(
     session: requests.Session,
     item: RemoteFile,
     refresh: bool,
+    minimum: int,
 ) -> RemoteFile:
     digest, size, etag, modified = download_file(
         session,
         item.url,
         RAW / item.key,
-        MIN_BYTES[item.key],
+        minimum,
         refresh,
     )
     item.sha256 = digest
@@ -214,6 +214,12 @@ def build_postcode_parquet(extracted: Path, parquet: Path) -> None:
     ]
     for alias, source in columns.items():
         selects.append(f"nullif(\"{source}\", '') as {alias}")
+    if doterm:
+        selects.append(
+            f"case when \"{doterm}\" is null or \"{doterm}\" = '' then false else true end as terminated"
+        )
+    else:
+        selects.append("false as terminated")
     print("build postcode parquet", flush=True)
     duckdb.sql(
         f"""
@@ -248,10 +254,53 @@ def prepare_nspl(refresh: bool) -> None:
     extracted.unlink(missing_ok=True)
 
 
+def discover_spec(session: requests.Session, spec: SourceSpec, today=None) -> RemoteFile:
+    if spec.kind == "ods":
+        return RemoteFile(key=spec.key, url=ODS.format(report=spec.report))
+    if spec.kind == "cqc":
+        return discover_cqc(session, today)[spec.key]
+    if spec.kind == "nspl":
+        return discover_nspl(session)
+    if spec.kind == "ckan":
+        return ckan_latest(session, spec.ckan_base or "", spec.ckan_package or "", spec.ckan_pattern or "", spec.key)
+    if spec.kind == "page" and spec.converter == "care_inspectorate":
+        return discover_care_inspectorate(session, spec.key)
+    if spec.kind == "page" and spec.converter == "rqia":
+        return discover_rqia(session, spec.key)
+    if spec.kind == "direct":
+        return discover_ciw(spec.key)
+    raise RuntimeError(f"No discovery for {spec.key}")
+
+
+def land_spec(session: requests.Session, spec: SourceSpec, refresh: bool, today=None) -> RemoteFile:
+    """Download one source. Converter outputs drop person columns."""
+    output = RAW / spec.key
+    if spec.converter and output.exists() and output.stat().st_size > 0 and not refresh:
+        print(f"skip {output.relative_to(ROOT)}", flush=True)
+        item = RemoteFile(key=spec.key, url="")
+        item.sha256 = sha256_file(output)
+        item.size = output.stat().st_size
+        return item
+    item = discover_spec(session, spec, today)
+    if not spec.converter:
+        return apply_download(session, item, refresh, spec.minimum_bytes)
+    suffix = Path(urlparse(item.url).path).suffix.lower() or ".bin"
+    incoming = RAW / "_incoming" / f"{Path(spec.key).stem}{suffix}"
+    _, _, etag, modified = download_file(session, item.url, incoming, spec.minimum_bytes, True)
+    try:
+        count = CONVERTERS[spec.converter](incoming, output)
+    finally:
+        incoming.unlink(missing_ok=True)
+    print(f"wrote {output.relative_to(ROOT)} ({count} rows)", flush=True)
+    item.sha256 = sha256_file(output)
+    item.size = output.stat().st_size
+    item.etag = etag
+    item.last_modified = modified
+    return item
+
+
 def fetch_all(session: requests.Session, refresh: bool, today=None) -> dict[str, RemoteFile]:
-    found = discover_sources(session, today)
-    for item in found.values():
-        apply_download(session, item, refresh)
+    found = {spec.key: land_spec(session, spec, refresh, today) for spec in SPECS}
     prepare_cqc(refresh)
     prepare_nspl(refresh)
     return found

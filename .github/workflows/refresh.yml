@@ -51,8 +51,12 @@ jobs:
           from pathlib import Path
           status = json.loads(Path("data/build/refresh-status.json").read_text(encoding="utf-8"))
           Path("data/build/action.txt").write_text(status["action"], encoding="utf-8")
+          Path("data/build/degraded.txt").write_text("true" if status.get("degraded") else "false", encoding="utf-8")
+          Path("data/build/stale.txt").write_text(", ".join(status.get("stale") or []), encoding="utf-8")
           PY
           echo "action=$(cat data/build/action.txt)" >> "$GITHUB_OUTPUT"
+          echo "degraded=$(cat data/build/degraded.txt)" >> "$GITHUB_OUTPUT"
+          echo "stale=$(cat data/build/stale.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
         if: steps.refresh.outputs.action == 'publish'
@@ -61,7 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           tag=$(python -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
-          notes=$(python -c 'import json; m=json.load(open("data/mart/manifest.json", encoding="utf-8")); print("Location reference built", m["built_at"] + ".", m["row_counts"]["location"], "current England sites.")')
+          notes=$(python -c 'from pathlib import Path; print(Path("data/build/release-notes.txt").read_text(encoding="utf-8").strip())')
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --title "Location data" --notes "$notes"
           else
@@ -73,6 +77,7 @@ jobs:
             data/mart/entity_site.parquet \
             data/mart/location_history.parquet \
             data/mart/manifest.json \
+            data/mart/source-cache.zip \
             --clobber
 
       - name: Record an unchanged check
@@ -85,13 +90,17 @@ jobs:
           gh release edit "$tag" --notes "Checked $(date -u +%Y-%m-%dT%H:%M:%SZ). Sources unchanged. The previous location files stay published."
 
       - name: Open or update the failure issue
-        if: failure()
+        if: failure() || steps.refresh.outputs.degraded == 'true'
         uses: actions/github-script@v7
         with:
           script: |
+            const degraded = "${{ steps.refresh.outputs.degraded }}" === "true";
+            const stale = "${{ steps.refresh.outputs.stale }}";
             const title = "Data refresh failed";
             const body = [
-              "The location refresh did not publish new data. The previous release is unchanged.",
+              degraded
+                ? "New location files were published, but some sources used their last good copy: " + stale + "."
+                : "The location refresh did not publish new data. The previous release is unchanged.",
               "",
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             ].join("\n");
@@ -116,6 +125,9 @@ jobs:
                 title,
                 body,
               });
+            }
+            if (degraded) {
+              core.setFailed("Published with stale sources: " + stale);
             }
 
       - name: Close the failure issue after a good run

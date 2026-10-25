@@ -70,7 +70,7 @@ def _download_release() -> Path | None:
     cache = Path(os.environ.get("LOCATIONS_CACHE_DIR", Path.home() / ".cache" / "healthcare-location-reference"))
     staging = cache.with_name(cache.name + ".partial")
     session = requests.Session()
-    session.headers["User-Agent"] = "healthcare-location-reference/0.1"
+    session.headers["User-Agent"] = "healthcare-location-reference/0.2"
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
@@ -129,6 +129,7 @@ def ensure_data() -> LocationData:
     except ReleaseUnavailable:
         return _sample()
 
+
 def _long_date(value: str) -> str:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -168,42 +169,80 @@ def edition_label(edition: str) -> str:
     return edition.replace("_", " ")
 
 
+SOURCE_LABELS = {
+    "cqc/active_locations.ods": "Care Quality Commission active locations",
+    "ods/etr.csv": "NHS trusts",
+    "ods/ets.csv": "NHS trust sites",
+    "ods/ephp.csv": "Independent healthcare providers",
+    "ods/ephpsite.csv": "Independent healthcare provider sites",
+    "ods/wlhb.csv": "Welsh health boards",
+    "ods/wlhbsite.csv": "Welsh health board sites",
+    "ods/epraccur.csv": "Welsh GP practices",
+    "ciw/services.csv": "Care Inspectorate Wales services",
+    "phs/hospitals.csv": "Scottish hospitals",
+    "phs/gp_practices.csv": "Scottish GP practices",
+    "phs/council_board.csv": "Scottish council to health board lookup",
+    "care_inspectorate/services.csv": "Care Inspectorate services",
+    "ods/niorg.csv": "Northern Ireland organisations",
+    "ods/npraccur.csv": "Northern Ireland GP practices",
+    "rqia/services.csv": "RQIA services",
+}
+
+
 def currency_markdown(data: LocationData) -> str:
     built = _built_label(data.manifest, data.directory)
-    opening = f"This copy was built on {built}." if built else "This copy has no build date."
-    cqc_date = None
-    for source in data.manifest.get("sources", []):
-        if source.get("key") == "cqc/active_locations.ods" and source.get("publisher_date"):
-            cqc_date = source["publisher_date"]
+    opening = f"This copy was built on **{built}**." if built else "This copy has no build date."
     edition = data.manifest.get("nspl_edition")
-    cqc = (
-        f"Care Quality Commission rows come from the active-locations spreadsheet dated {_long_date(cqc_date)}."
-        if cqc_date
-        else "Care Quality Commission rows come from the monthly active-locations spreadsheet."
-    )
     postcodes = (
         f"Area names come from the Office for National Statistics postcode lookup for {edition_label(edition)}."
         if edition
         else "Area names come from the Office for National Statistics postcode lookup."
     )
-    return "\n\n".join(
-        [
-            opening,
-            (
-                "The published copy is checked on Monday at 04:00 UTC "
-                "(04:00 GMT, or 05:00 during British Summer Time) and replaced when the "
-                "source files have changed. A failed check keeps the previous copy. "
-                "A file you built yourself is only as current as the download you used."
-            ),
-            cqc,
-            (
-                "Deactivated locations are kept for a later history view and are not searchable here. "
-                + postcodes
-                + " Searching a postcode lists the sites recorded at that postcode. "
-                "The lookup file itself is not a list of sites."
-            ),
-        ]
+    parts = [
+        opening,
+        (
+            "The published copy is checked every Monday at 04:00 UTC (04:00 GMT, or 05:00 "
+            "during British Summer Time) and replaced when a source has changed. A copy you "
+            "build yourself is as current as the files you downloaded."
+        ),
+        (
+            "If one source cannot be fetched, it keeps its last good copy and is marked stale "
+            "below, while the other sources still update. If an England source has no saved "
+            "copy, the previous release stays in place."
+        ),
+    ]
+    sources = _source_currency(data.manifest)
+    if sources:
+        parts.append(sources)
+    parts.append(
+        postcodes + " Searching a postcode lists the sites recorded at that postcode. "
+        "Deactivated locations are kept for a later history view and are not searchable yet."
     )
+    return "\n\n".join(parts)
+
+
+def _source_currency(manifest: dict) -> str:
+    stale, dated, undated = [], [], []
+    for source in manifest.get("sources", []):
+        label = SOURCE_LABELS.get(source.get("key", ""))
+        if label is None:
+            continue
+        if source.get("status") == "fallback":
+            since = source.get("stale_since")
+            when = f" since {_long_date(since)}" if since else ""
+            stale.append(f"- **{label}** is stale{when}, so its last good copy is used.")
+        elif source.get("publisher_date"):
+            dated.append(f"- {label}: {_long_date(source['publisher_date'])}")
+        else:
+            undated.append(label)
+    parts = []
+    if stale:
+        parts.append("**Stale sources**\n\n" + "\n".join(stale))
+    if dated:
+        parts.append("Publish dates of the source files:\n\n" + "\n".join(dated))
+    if undated:
+        parts.append("These files carry no publish date and were fetched for this build: " + ", ".join(undated) + ".")
+    return "\n\n".join(parts)
 
 
 def attribution_year(manifest: dict) -> int:
@@ -216,7 +255,10 @@ def attribution_year(manifest: dict) -> int:
 def attribution_markdown(year: int) -> str:
     return (
         "NHS organisation data from NHS England, care location data from the "
-        "Care Quality Commission, and postcode geography from the Office for "
+        "Care Quality Commission, Welsh care services from Care Inspectorate Wales, "
+        "Scottish hospitals, GP practices and health board geography from Public Health Scotland, "
+        "Scottish care services from the Care Inspectorate, Northern Ireland regulated "
+        "services from RQIA, and postcode geography from the Office for "
         "National Statistics, used under the "
         "[Open Government Licence](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). "
         f"Contains OS data © Crown copyright and database right {year}. "

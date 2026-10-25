@@ -20,9 +20,9 @@ from (
     from sites
     where local_authority_code is not null and local_authority_name is not null
     union all
-    select 'icb:' || icb_code, location_id
+    select health_area_type || ':' || health_area_code, location_id
     from sites
-    where icb_code is not null and icb_name is not null
+    where health_area_code is not null and health_area_name is not null and health_area_type is not null
     union all
     select 'postcode:' || postcode_compact, location_id
     from sites

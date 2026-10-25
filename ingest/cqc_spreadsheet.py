@@ -18,6 +18,8 @@ ACTIVE_COLUMNS = {
     "ods_code": "Location ODS Code",
     "postcode": "Location Postal Code",
     "town": "Location City",
+    "address_1": "Location Street Address",
+    "address_2": "Location Address Line 2",
     "brand_name": "Brand Name",
     "provider_id": "Provider ID",
     "provider_name": "Provider Name",

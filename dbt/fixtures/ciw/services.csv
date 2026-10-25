@@ -1,0 +1,2 @@
+service_urn,name,known_as,service_type,service_subtype,address_1,address_2,address_3,town,postcode,local_authority,provider_urn,provider_name,company_number,charity_number,provider_registered_on,provider_type
+SIN-00000000-TEST,Example Cardiff Care Home,,Care Home Service,Adults With Nursing,Example Road,,,Cardiff,CF10 1AA,Cardiff,PRN-00000000-TEST,Example Welsh Care,00000000,,,

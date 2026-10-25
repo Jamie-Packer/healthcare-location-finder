@@ -16,7 +16,15 @@ REQUIRED = {
     "dbt_valid_from",
     "dbt_valid_to",
 }
-ADDED = {"postcode": "VARCHAR", "ods_code": "VARCHAR"}
+ADDED = {
+    "postcode": "VARCHAR",
+    "ods_code": "VARCHAR",
+    "nhs_code": "VARCHAR",
+    "service_type": "VARCHAR",
+    "regulator_id": "VARCHAR",
+    "country_name": "VARCHAR",
+    "health_area_code": "VARCHAR",
+}
 
 
 def restore_history(database: Path, history: Path) -> bool:
@@ -43,6 +51,12 @@ def restore_history(database: Path, history: Path) -> bool:
         for name, kind in ADDED.items():
             if name not in present:
                 connection.execute(f"alter table {SNAPSHOT} add column {name} {kind}")
+        present = {row[0] for row in connection.execute(f"describe {SNAPSHOT}").fetchall()}
+        if "nhs_code" in present and "ods_code" in present:
+            connection.execute(
+                f"update {SNAPSHOT} set nhs_code = ods_code "
+                "where nhs_code is null and ods_code is not null"
+            )
     finally:
         connection.close()
     print(f"restored {history.name}", flush=True)

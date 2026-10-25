@@ -14,14 +14,14 @@ with sites as (
             upper(concat_ws(
                 ' ',
                 name,
-                ods_name,
+                alt_name,
                 brand_name,
                 parent_name,
                 town,
                 postcode,
                 postcode_compact,
-                ods_code,
-                cqc_location_id
+                nhs_code,
+                regulator_id
             )),
             '[^A-Z0-9]+',
             ' ',
@@ -36,7 +36,7 @@ cleaned as (
         trim(array_to_string(
             list_filter(
                 string_split(match_tokens, ' '),
-                token -> token <> ''
+                lambda token: token <> ''
                     and token not in (
                         {% for word in stopwords %}
                         '{{ word }}'{% if not loop.last %}, {% endif %}
@@ -53,6 +53,7 @@ select
     name,
     parent_name,
     parent_code,
+    address,
     postcode,
     postcode_compact,
     town,
@@ -62,13 +63,16 @@ select
     county_code,
     region_name,
     region_code,
-    icb_name,
-    icb_code,
-    icb_ods_code,
+    health_area_name,
+    health_area_code,
+    health_area_ods_code,
+    health_area_type,
     country_name,
-    ods_code,
-    cqc_location_id,
+    nhs_code,
+    regulator,
+    regulator_id,
     service_type,
+    source,
     valid_from,
     valid_to,
     match_string
