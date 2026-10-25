@@ -77,7 +77,7 @@ def test_postcode_parquet_keeps_the_newer_country_code(tmp_path):
     build_postcode_parquet(extracted, parquet)
     country = duckdb.sql(
         f"select country_code from read_parquet('{parquet.as_posix()}')"
-    ).fetchone()[0]
+    ).fetchall()[0][0]
     assert country == "E92000001"
 
 

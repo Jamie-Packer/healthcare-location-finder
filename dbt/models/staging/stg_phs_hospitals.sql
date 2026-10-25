@@ -14,7 +14,7 @@ lined as (
                 nullif(trim(address_3), ''),
                 nullif(trim(address_4), '')
             ],
-            line -> line is not null
+            lambda line: line is not null
         ) as raw_lines,
         {{ postcode_display('postcode') }} as postcode,
         nullif(upper(trim(health_board_code)), '') as health_board_code,

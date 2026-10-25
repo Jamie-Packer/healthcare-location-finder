@@ -65,7 +65,7 @@ def _ods_shape(path: Path) -> tuple[int, int]:
     """
     connection = duckdb.connect()
     columns = len(connection.sql(f"select * {query} limit 0").columns)
-    count = connection.sql(f"select count(*) {query}").fetchone()[0]
+    count = connection.sql(f"select count(*) {query}").fetchall()[0][0]
     connection.close()
     return int(count), columns
 
@@ -100,7 +100,7 @@ def _csv_rows(path: Path) -> tuple[int, list[str]]:
             ignore_errors = true
         )
         """
-    ).fetchone()[0]
+    ).fetchall()[0][0]
     connection.close()
     return int(count), columns
 
@@ -113,7 +113,7 @@ def measure_source(raw: Path, spec: SourceSpec) -> int:
         raise ValidationError([f"{relative} is missing"])
     if path.suffix == ".parquet":
         connection = duckdb.connect()
-        rows = int(connection.sql(f"select count(*) from read_parquet('{path.as_posix()}')").fetchone()[0])
+        rows = int(connection.sql(f"select count(*) from read_parquet('{path.as_posix()}')").fetchall()[0][0])
         connection.close()
         columns: list[str] = []
         width = spec.minimum_columns
@@ -150,7 +150,7 @@ def validate_raw(raw: Path, waived: set[str] | None = None) -> dict[str, int]:
             continue
         if path.suffix == ".parquet":
             connection = duckdb.connect()
-            rows = int(connection.sql(f"select count(*) from read_parquet('{path.as_posix()}')").fetchone()[0])
+            rows = int(connection.sql(f"select count(*) from read_parquet('{path.as_posix()}')").fetchall()[0][0])
             connection.close()
             columns: list[str] = []
             width = spec.minimum_columns
@@ -191,7 +191,7 @@ def validate_marts(
             count(*) filter (where match_string is null or trim(match_string) = '')
         from read_parquet('{location}')
         """
-    ).fetchone()
+    ).fetchall()[0]
     by_country = connection.sql(
         f"""
         select
@@ -209,14 +209,14 @@ def validate_marts(
             f"select distinct service_type from read_parquet('{location}')"
         ).fetchall()
     }
-    search_count = connection.sql(f"select count(*) from read_parquet('{search}')").fetchone()[0]
+    search_count = connection.sql(f"select count(*) from read_parquet('{search}')").fetchall()[0][0]
     entity_types = {
         entity
         for (entity,) in connection.sql(
             f"select distinct entity_type from read_parquet('{search}')"
         ).fetchall()
     }
-    link_count = connection.sql(f"select count(*) from read_parquet('{links}')").fetchone()[0]
+    link_count = connection.sql(f"select count(*) from read_parquet('{links}')").fetchall()[0][0]
     orphan_links = connection.sql(
         f"""
         select count(*)
@@ -224,7 +224,7 @@ def validate_marts(
         anti join read_parquet('{location}') as location
             on links.location_id = location.location_id
         """
-    ).fetchone()[0]
+    ).fetchall()[0][0]
     unlinked = connection.sql(
         f"""
         select count(*)
@@ -232,7 +232,7 @@ def validate_marts(
         anti join read_parquet('{links}') as links
             on location.location_id = links.location_id
         """
-    ).fetchone()[0]
+    ).fetchall()[0][0]
     connection.close()
 
     failures: list[str] = []

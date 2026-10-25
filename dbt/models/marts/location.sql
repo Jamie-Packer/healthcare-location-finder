@@ -36,7 +36,7 @@ cleaned as (
         trim(array_to_string(
             list_filter(
                 string_split(match_tokens, ' '),
-                token -> token <> ''
+                lambda token: token <> ''
                     and token not in (
                         {% for word in stopwords %}
                         '{{ word }}'{% if not loop.last %}, {% endif %}

@@ -43,7 +43,7 @@ end
 {% macro tidy_case(value) %}
 case
     when {{ value }} = upper({{ value }})
-        then array_to_string(list_transform(string_split(lower({{ value }}), ' '), word -> upper(word[1]) || word[2:]), ' ')
+        then array_to_string(list_transform(string_split(lower({{ value }}), ' '), lambda word: upper(word[1]) || word[2:]), ' ')
     else {{ value }}
 end
 {% endmacro %}
