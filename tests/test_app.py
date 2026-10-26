@@ -71,9 +71,10 @@ def test_match_string_drops_common_words():
 
 
 def test_chosen_columns_keep_the_keyword_string_last():
-    assert chosen_columns([])[-1] == "match_string"
+    assert "match_string" not in chosen_columns([])
     assert "country_name" in chosen_columns([])
     assert chosen_columns(["postcode", "match_string", "name"]) == ("name", "postcode", "match_string")
+    assert chosen_columns(["name", "postcode"]) == ("name", "postcode")
 
 
 def test_download_stem_follows_the_place_name():
@@ -93,7 +94,7 @@ def test_download_uses_the_matching_place_name(fixture_mart):
 def test_version_label_and_table_download(fixture_mart):
     app = _search_app(fixture_mart)
     html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
-    assert "v0.2 · UK · current sites" in html_text
+    assert "v0.2.1 · UK · current sites" in html_text
     app.text_input[0].set_value("Kent").run()
     assert not app.code
     assert any(button.label == "Prepare download" for button in app.button)
@@ -102,7 +103,7 @@ def test_version_label_and_table_download(fixture_mart):
 def test_how_to_use_is_on_the_search_page(fixture_mart):
     app = _search_app(fixture_mart)
     assert [item.label for item in app.expander] == ["How to use"]
-    assert app.expander[0].proto.expanded is True
+    assert app.expander[0].proto.expanded is False
     app.text_input[0].set_value("Kent").run()
     assert app.expander[0].proto.expanded is False
 
@@ -136,6 +137,37 @@ def test_changing_the_service_clears_the_prepared_download(fixture_mart):
     assert "export_csv" not in app.session_state
 
 
+def test_country_lists_sites_without_a_search(fixture_mart):
+    app = _search_app(fixture_mart)
+    app.session_state["country"] = "England"
+    app.run()
+    assert not app.exception
+    assert _counts(app) >= 1
+    html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
+    assert "in England" in html_text
+    assert "flag" not in app.dataframe[0].value.columns
+    assert "country" in app.dataframe[0].value.columns
+    assert "match_string" not in app.dataframe[0].value.columns
+
+
+def test_united_kingdom_lists_every_loaded_country(fixture_mart):
+    app = _search_app(fixture_mart)
+    app.session_state["country"] = "United Kingdom"
+    app.run()
+    everyone = _counts(app)
+    app.session_state["country"] = "England"
+    app.run()
+    assert everyone >= _counts(app) >= 1
+    assert "flag" not in app.dataframe[0].value.columns
+
+
+def test_country_narrows_a_place(fixture_mart):
+    app = _search_app(fixture_mart)
+    app.session_state["country"] = "Scotland"
+    app.text_input[0].set_value("Kent").run()
+    assert _counts(app) == 0
+
+
 def test_help_page_keeps_its_sections(fixture_mart):
     os.environ["LOCATIONS_MART_DIR"] = str(fixture_mart)
     app = AppTest.from_file(str(ROOT / "app" / "help.py"), default_timeout=30)
@@ -148,6 +180,11 @@ def test_help_page_keeps_its_sections(fixture_mart):
         "Sources and licence",
         "Columns",
     ]
+    text = " ".join(str(getattr(item, "value", "")) for item in app.main)
+    text = " ".join(text.split())
+    assert "Free-text matching" not in text
+    assert "Union Flag" not in text
+    assert "The United Kingdom lists every site" in text
 
 
 def test_sample_files_are_present():

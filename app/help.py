@@ -21,30 +21,32 @@ if st.button("Back to search", icon=":material/arrow_back:"):
 st.header("How to use it")
 st.markdown(
     """
-1. **Search.** Type a place or a name and press Enter. That can be a county, a
-   trust, a health board, a hospital, a postcode, an NHS code or a regulator id.
-   NHS codes come from the Organisation Data Service or Public Health Scotland.
-   Regulator ids come from the Care Quality Commission, Care Inspectorate Wales,
-   the Care Inspectorate or RQIA.
-2. **Pick a match.** The list shows up to 30 results. A match can be a country,
-   region, county, local authority, integrated care board, health board, HSC
-   trust area, provider or single site. The table then lists the current sites
-   under it.
-3. **Narrow it down.** Leave **Service** and **Country** empty to keep
-   everything, or pick the ones you want. **Columns** changes what the table and
-   the download show, and **Default columns** puts the usual set back.
+1. **Choose a country or search.** Open **Country** and pick England, Scotland,
+   Wales, Northern Ireland or the United Kingdom. The United Kingdom lists every
+   site, so the download is one file. You can do this without typing a place.
+   Or type a place or a name and press Enter. That can be a county, a trust, a
+   health board, a hospital, a postcode, an NHS code or a regulator id. NHS codes
+   come from the Organisation Data Service or Public Health Scotland. Regulator
+   ids come from the Care Quality Commission, Care Inspectorate Wales, the Care
+   Inspectorate or RQIA.
+2. **Pick a place.** If you searched, the list shows up to 30 results. A place
+   can be a country, region, county, local authority, integrated care board,
+   health board, HSC trust area, provider or single site. The table then lists
+   the current sites under it. A country chosen above narrows this list. Clear
+   **Country** to keep every country in that place.
+3. **Narrow it down.** Leave **Service** empty to keep every service, or pick
+   the ones you want. **Columns** changes what the table and the download show,
+   and **Default columns** puts the usual set back.
 4. **Download.** The screen shows the first 500 sites. **Prepare download**
    builds a CSV, plus an Excel file when the extract is small enough. Both include
    every site in your selection, one row per site.
-
-The flag shows the country of each site. Northern Ireland uses the Union Flag.
-Downloads keep the country name as text.
 
 Counties and regions are only filled in England. Kent does not include Medway,
 which is its own unitary authority, but the Kent and Medway integrated care board
 covers both.
 
-**The keyword string.** `match_string` is always the last column. It holds one
+**The keyword string.** `match_string` is left out of the default columns. Add it
+under **Columns** to include it, and it is then the last column. It holds one
 line of keywords for each site: its names, parent organisation, town, postcode
 (with and without the space) and codes. Punctuation and common words such as
 hospital, NHS and trust are removed. The street address is left out.
@@ -85,8 +87,6 @@ country of its office.
   registered as a care location is listed as other.
 - Closed sites and older names. You cannot look up a site as it was in the past.
 - Mergers and renames. A renamed organisation is not linked to the one it replaced.
-- Free-text matching. The app finds places in this register but does not compare
-  text from another system. Download the table and match it elsewhere.
 - Named people, such as registered managers.
 
 **How services are decided**
@@ -141,7 +141,7 @@ st.markdown(
 | `source` | The register the row came from. `ods+cqc` means the England records were combined. |
 | `valid_from` | Start date from the source, where the publisher gives one. |
 | `valid_to` | End date. Blank means the site is open. Closed sites are not listed yet, so this is always blank for now. |
-| `match_string` | Upper-case keywords with punctuation and common words removed: site name, other names, parent, town, postcode with and without the space, NHS code and regulator id. |
+| `match_string` | Optional. Upper-case keywords with punctuation and common words removed: site name, other names, parent, town, postcode with and without the space, NHS code and regulator id. When included, it is the last column. |
 
 More columns, such as codes for each area, are available under **Columns** on the search page.
 """

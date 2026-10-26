@@ -2,7 +2,7 @@
 
 Look up UK healthcare locations and download a table of the sites you select.
 
-Search for a country, region, county, local authority, integrated care board, health board, HSC trust area, provider or single site. The app lists the current sites under that place, and you can narrow them by service type and country. The download has one row per site with the columns you choose. By default that is the name, parent, town, postcode, country, local authority, health area, service type and a keyword string for fuzzy matching.
+Search for a country, region, county, local authority, integrated care board, health board, HSC trust area, provider or single site. The app lists the current sites under that place, and you can narrow them by service type and country. The download has one row per site with the columns you choose. By default that is the name, parent, town, postcode, country, local authority, health area and service type.
 
 ## Coverage
 
