@@ -77,6 +77,53 @@ CSS = f"""
     border-radius: 0.75rem;
     overflow: hidden;
 }}
+
+.country-label {{
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0 0 0.5rem 0;
+}}
+[class*="st-key-country-menu"] [data-testid="stPopoverButton"] {{
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    background-color: #25221e;
+    border: 1px solid #3b362e;
+    border-radius: 0.5rem;
+    color: #ece6da;
+    font-weight: 400;
+    min-height: 2.6rem;
+    background-repeat: no-repeat;
+    background-position: 0.7rem center;
+    background-size: 1.35rem auto;
+}}
+[class*="st-key-country-menu"] [data-testid="stPopoverButton"]:hover {{
+    border-color: #d4a24c;
+    color: #ece6da;
+}}
+[class*="st-key-country-menu"] [data-testid="stPopoverButton"] > div {{
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}}
+[class*="st-key-country-menu"] [data-testid="stPopoverButton"] > div > div:first-child {{
+    justify-content: flex-start;
+    flex: 1 1 auto;
+}}
+[class*="st-key-country-option-"] button {{
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    background-repeat: no-repeat;
+    background-position: 0.7rem center;
+    background-size: 1.35rem auto;
+    padding-left: 2.55rem;
+}}
+[class*="st-key-country-option-"] button > div {{
+    justify-content: flex-start;
+    width: 100%;
+}}
 </style>
 """
 
