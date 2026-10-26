@@ -59,7 +59,6 @@ DEFAULT_COLUMNS = (
     "local_authority_name",
     "health_area_name",
     "service_type",
-    "match_string",
 )
 
 ALL_COLUMNS = (
@@ -93,12 +92,13 @@ ALL_COLUMNS = (
 
 
 def chosen_columns(selected: object) -> tuple[str, ...]:
-    """Keep the download columns in a stable order, with the keyword string last."""
+    """Keep the download columns in a stable order. The keyword string comes last when it is chosen."""
     wanted = {str(name) for name in (selected or [])}
+    if not wanted:
+        return tuple(DEFAULT_COLUMNS)
     picked = [name for name in ALL_COLUMNS if name in wanted and name != "match_string"]
-    if not picked:
-        picked = [name for name in DEFAULT_COLUMNS if name != "match_string"]
-    picked.append("match_string")
+    if "match_string" in wanted:
+        picked.append("match_string")
     return tuple(picked)
 
 

@@ -45,7 +45,8 @@ Counties and regions are only filled in England. Kent does not include Medway,
 which is its own unitary authority, but the Kent and Medway integrated care board
 covers both.
 
-**The keyword string.** `match_string` is always the last column. It holds one
+**The keyword string.** `match_string` is left out of the default columns. Add it
+under **Columns** to include it, and it is then the last column. It holds one
 line of keywords for each site: its names, parent organisation, town, postcode
 (with and without the space) and codes. Punctuation and common words such as
 hospital, NHS and trust are removed. The street address is left out.
@@ -140,7 +141,7 @@ st.markdown(
 | `source` | The register the row came from. `ods+cqc` means the England records were combined. |
 | `valid_from` | Start date from the source, where the publisher gives one. |
 | `valid_to` | End date. Blank means the site is open. Closed sites are not listed yet, so this is always blank for now. |
-| `match_string` | Upper-case keywords with punctuation and common words removed: site name, other names, parent, town, postcode with and without the space, NHS code and regulator id. |
+| `match_string` | Optional. Upper-case keywords with punctuation and common words removed: site name, other names, parent, town, postcode with and without the space, NHS code and regulator id. When included, it is the last column. |
 
 More columns, such as codes for each area, are available under **Columns** on the search page.
 """

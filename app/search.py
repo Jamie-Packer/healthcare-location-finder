@@ -243,14 +243,13 @@ def _preview(
     columns: tuple[str, ...],
     stamp: str,
 ) -> pd.DataFrame:
-    body = [name for name in columns if name != "match_string"]
     frame = _query_sites(
         links_path,
         location_path,
         entity_id,
         services,
         countries,
-        tuple(body + ["match_string"]),
+        columns,
         TABLE_ROWS,
     )
     text = [name for name in frame.columns if pd.api.types.is_string_dtype(frame[name])]
@@ -438,14 +437,7 @@ def main() -> None:
     if paths.source == "sample":
         st.warning(SAMPLE_WARNING)
 
-    # Open until the first search or country choice, then stay out of the way.
-    searching = (
-        len(str(st.session_state.get("query", "")).strip()) >= 2
-        or st.session_state.get("country") in COUNTRY_CHOICES
-    )
-    if searching:
-        st.session_state["has_searched"] = True
-    with st.expander("How to use", expanded=not st.session_state.get("has_searched", False)):
+    with st.expander("How to use", expanded=False):
         st.markdown(GUIDE)
 
     year = attribution_year(paths.manifest)
@@ -467,7 +459,6 @@ def main() -> None:
                 format_func=COLUMN_LABELS.get,
                 key="columns",
             )
-            st.caption("The keyword string, `match_string`, always comes last.")
             st.button("Default columns", on_click=_reset_columns, width="stretch")
     service_column, country_column = st.columns(2, gap="medium")
     with service_column:
