@@ -1,10 +1,18 @@
 """Open the location search, with a separate help page."""
 
+from pathlib import Path
+
 import streamlit as st
 
 from theme import apply_theme
 
-st.set_page_config(page_title="Healthcare location reference", layout="wide")
+ICON = Path(__file__).resolve().parent / "assets" / "favicon.svg"
+
+st.set_page_config(
+    page_title="Healthcare location reference",
+    page_icon=ICON,
+    layout="wide",
+)
 
 
 def _version_tuple(text: str) -> tuple[int, ...]:
