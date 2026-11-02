@@ -1,8 +1,14 @@
 """Explain how to search, what the files contain, and what each column means."""
 
+from pathlib import Path
+
 import streamlit as st
 
 from data import SAMPLE_WARNING, attribution_markdown, attribution_year, currency_markdown, ensure_data
+
+
+def _relationship_diagram() -> None:
+    st.iframe(Path(__file__).resolve().parent / "assets" / "relationships.html", height=780)
 
 
 try:
@@ -110,6 +116,17 @@ rows stay. Some NHS hospitals keep their organisation code in the regulator id
 and leave the organisation code blank, so they appear twice. Wales, Scotland and
 Northern Ireland are not merged across sources, so two sources can list the same
 place.
+"""
+)
+
+st.subheader("How the records relate")
+_relationship_diagram()
+st.markdown(
+    """
+An organisation is an NHS trust, independent provider, health board, or registered
+provider. The health area is an integrated care board, health board, or HSC trust
+area from the postcode. In England, a Care Quality Commission location shares a row
+with an NHS site only when the organisation code matches exactly one open site.
 """
 )
 

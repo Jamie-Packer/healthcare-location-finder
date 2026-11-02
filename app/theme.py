@@ -78,10 +78,51 @@ CSS = f"""
     overflow: hidden;
 }}
 
-.country-label {{
+.field-label {{
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 1.5rem;
+    margin: 0;
+    color: #ece6da;
     font-size: 14px;
-    line-height: 1.6;
-    margin: 0 0 0.5rem 0;
+    line-height: 1.5;
+}}
+[data-testid="stElementContainer"]:has(.field-label) {{
+    margin-bottom: 0;
+}}
+.field-help {{
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid #b9b1a2;
+    border-radius: 999px;
+    color: #b9b1a2;
+    font-size: 0.72rem;
+    line-height: 1;
+    cursor: help;
+}}
+.field-help-tip {{
+    display: none;
+    position: absolute;
+    left: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 20;
+    width: 16rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #3b362e;
+    border-radius: 0.5rem;
+    background: #25221e;
+    color: #ece6da;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}}
+.field-help:hover .field-help-tip,
+.field-help:focus .field-help-tip {{
+    display: block;
 }}
 [class*="st-key-country-menu"] [data-testid="stPopoverButton"] {{
     width: 100%;
