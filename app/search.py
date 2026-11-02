@@ -12,7 +12,7 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
-from data import SAMPLE_WARNING, attribution_markdown, attribution_year, ensure_data
+from data import SAMPLE_WARNING, ensure_data
 from match_text import ALL_COLUMNS, DEFAULT_COLUMNS, chosen_columns, download_stem, strip_stopwords
 
 
@@ -27,6 +27,7 @@ FLAGS = {
     "England": _flag_uri("england.svg"),
     "Scotland": _flag_uri("scotland.svg"),
     "Wales": _flag_uri("wales.svg"),
+    "Northern Ireland": _flag_uri("northern-ireland.svg"),
 }
 COUNTRY_CHOICES = ("United Kingdom", "England", "Scotland", "Wales", "Northern Ireland")
 TYPE_LABELS = {
@@ -49,7 +50,7 @@ SERVICES = {
     "home care": "Home care",
     "other": "Other",
 }
-EXAMPLES = ("Kent", "NHS Lothian", "Cardiff", "Belfast")
+SERVICE_HELP = "Leave empty to include every service type."
 COLUMN_LABELS = {
     "name": "name",
     "parent_name": "parent_name",
@@ -263,15 +264,6 @@ def _excel(frame: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
-def _footer(year: int) -> None:
-    st.divider()
-    st.markdown(attribution_markdown(year))
-
-
-def _use_example(text: str) -> None:
-    st.session_state["query"] = text
-
-
 def _reset_columns() -> None:
     st.session_state["columns"] = list(DEFAULT_COLUMNS)
 
@@ -302,25 +294,31 @@ def _flag_rules() -> str:
     return " ".join(rules)
 
 
-def _country_dropdown() -> str | None:
+def _selected_country() -> str | None:
     selected = st.session_state.get("country")
     if selected not in COUNTRY_CHOICES:
-        selected = None
+        return None
+    return selected
+
+
+def _icon_css(selected: str | None) -> str:
     flag = FLAGS.get(selected or "")
     trigger = (
         f'background-image: url("{flag}"); padding-left: 2.55rem;'
         if flag
         else "padding-left: 0.85rem;"
     )
-    st.html(
-        '<p class="country-label">Country</p>'
-        "<style>"
-        f"[class*='st-key-country-menu'] [data-testid='stPopoverButton'] {{ {trigger} }}"
+    return (
+        "[class*='st-key-country-menu'] [data-testid='stPopoverButton']"
+        f" {{ {trigger} }}"
         "[class*='st-key-country-menu'] [data-testid='stPopoverButton'] > div > div:first-child"
-        "{ justify-content: flex-start !important; }"
-        f"{_flag_rules()}"
-        "</style>"
+        " { justify-content: flex-start !important; }"
+        + _flag_rules()
     )
+
+
+def _country_dropdown() -> str | None:
+    selected = _selected_country()
     label = selected or "Select a country"
     menu_key = f"country-menu-{_country_slug(selected) if selected else 'none'}"
     with st.popover(label, key=menu_key, width="stretch"):
@@ -353,7 +351,6 @@ def _show_place(
     columns: tuple[str, ...],
     place: str,
     file_label: str,
-    year: int,
     stamp: str,
     nationwide: bool,
 ) -> None:
@@ -361,7 +358,6 @@ def _show_place(
     st.html(_summary(total, place, services, countries, nationwide))
     if total == 0:
         st.info("No sites for this place and filter. Change the country or the service to widen it.")
-        _footer(year)
         return
 
     sites = _preview(links_path, location_path, entity_id, services, countries, columns, stamp)
@@ -413,7 +409,6 @@ def _show_place(
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     icon=":material/download:",
                 )
-    _footer(year)
 
 
 def main() -> None:
@@ -429,7 +424,10 @@ def main() -> None:
     with action:
         if st.button("Full guide", width="stretch"):
             st.switch_page("help.py")
-    st.html('<p class="version">v0.2.1 · UK · current sites</p>')
+    st.html(
+        '<p class="version">v0.2.2 · UK</p>'
+        f"<style>{_icon_css(_selected_country())}</style>"
+    )
     st.html(
         '<p class="lede">Find current healthcare sites and download a table of the ones you select.</p>'
     )
@@ -440,7 +438,6 @@ def main() -> None:
     with st.expander("How to use", expanded=False):
         st.markdown(GUIDE)
 
-    year = attribution_year(paths.manifest)
     stamp = f"{paths.source}|{paths.manifest.get('built_at', '')}"
 
     search_column, column_column = st.columns([5, 1], vertical_alignment="bottom")
@@ -460,17 +457,25 @@ def main() -> None:
                 key="columns",
             )
             st.button("Default columns", on_click=_reset_columns, width="stretch")
-    service_column, country_column = st.columns(2, gap="medium")
+    service_column, country_column = st.columns(2, gap="medium", vertical_alignment="top")
     with service_column:
+        st.html(
+            '<div class="field-label"><span>Service</span>'
+            f'<span class="field-help" tabindex="0" role="note" aria-label="{SERVICE_HELP}">'
+            "?"
+            f'<span class="field-help-tip">{SERVICE_HELP}</span>'
+            "</span></div>"
+        )
         selected_services = st.pills(
             "Service",
             options=list(SERVICES),
             format_func=SERVICES.get,
             selection_mode="multi",
             key="services",
-            help="Leave empty to include every service type.",
+            label_visibility="collapsed",
         )
     with country_column:
+        st.html('<div class="field-label"><span>Country</span></div>')
         country = _country_dropdown()
     services = tuple(sorted(selected_services or []))
     countries = () if country in (None, "United Kingdom") else (country,)
@@ -480,11 +485,6 @@ def main() -> None:
 
     if len(query.strip()) < 2:
         if country is None:
-            st.caption("Type at least two characters, choose a country, or try an example.")
-            with st.container(horizontal=True):
-                for example in EXAMPLES:
-                    st.button(example, on_click=_use_example, args=(example,), key=f"example-{example}")
-            _footer(year)
             return
         place = "the United Kingdom" if country == "United Kingdom" else country
         _show_place(
@@ -496,7 +496,6 @@ def main() -> None:
             columns,
             place,
             "United Kingdom" if country == "United Kingdom" else country,
-            year,
             stamp,
             True,
         )
@@ -505,7 +504,6 @@ def main() -> None:
     hits = _search(paths.search.as_posix(), query, stamp)
     if hits.empty:
         st.warning("No places found. Try a shorter name, a county, or a postcode.")
-        _footer(year)
         return
 
     labels = []
@@ -524,7 +522,6 @@ def main() -> None:
         columns,
         str(selected["name"]),
         str(selected["name"]),
-        year,
         stamp,
         False,
     )

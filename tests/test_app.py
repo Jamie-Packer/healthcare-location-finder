@@ -56,7 +56,12 @@ def test_currency_uses_the_manifest_dates(tmp_path):
 
 def test_search_finds_kent(fixture_mart):
     app = _search_app(fixture_mart)
-    assert any("two characters" in str(item.value) for item in app.caption)
+    assert not any("two characters" in str(item.value) for item in app.caption)
+    labels = [button.label for button in app.button]
+    for example in ("Kent", "NHS Lothian", "Cardiff", "Belfast"):
+        assert example not in labels
+    html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
+    assert "Open Government Licence" not in html_text
     app.text_input[0].set_value("Kent").run()
     assert not app.exception
     labels = [str(option) for option in app.selectbox[0].options]
@@ -94,7 +99,9 @@ def test_download_uses_the_matching_place_name(fixture_mart):
 def test_version_label_and_table_download(fixture_mart):
     app = _search_app(fixture_mart)
     html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
-    assert "v0.2.1 · UK · current sites" in html_text
+    assert "v0.2.2 · UK" in html_text
+    assert "v0.2.1" not in html_text
+    assert "current sites" not in html_text
     app.text_input[0].set_value("Kent").run()
     assert not app.code
     assert any(button.label == "Prepare download" for button in app.button)
@@ -185,6 +192,16 @@ def test_help_page_keeps_its_sections(fixture_mart):
     assert "Free-text matching" not in text
     assert "Union Flag" not in text
     assert "The United Kingdom lists every site" in text
+    assert "Open Government Licence" in text
+    assert [item.value for item in app.subheader] == ["How the records relate"]
+    assert "shares a row with an NHS site" in text
+
+
+def test_northern_ireland_icon_uses_the_flag_box():
+    svg = (ROOT / "app" / "assets" / "flags" / "northern-ireland.svg").read_text(encoding="utf-8")
+    assert 'viewBox="0 0 60 36"' in svg
+    assert 'preserveAspectRatio="xMidYMid meet"' in svg
+    assert "data:image/png;base64," in svg
 
 
 def test_sample_files_are_present():
