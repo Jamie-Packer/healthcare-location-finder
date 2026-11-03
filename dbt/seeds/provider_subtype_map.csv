@@ -1,0 +1,15 @@
+source,category,entity_subtype
+cqc,NHS Healthcare Organisation,nhs_organisation
+cqc,NHS Healthcare,nhs_organisation
+cqc,Independent Healthcare Org,independent_healthcare
+cqc,Social Care Org,social_care
+cqc,Adult social care,social_care
+cqc,Primary Medical Services,primary_medical
+cqc,Primary Dental Care,dental
+cqc,Independent Ambulance,ambulance
+ciw,Local Authority,local_authority
+ciw,Charity,charity
+ciw,Company,company
+ciw,Limited Company,company
+ciw,Individual,individual
+ciw,Health Board,nhs_health_board

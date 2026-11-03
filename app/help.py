@@ -95,6 +95,9 @@ country of its office.
 - Mergers and renames. A renamed organisation is not linked to the one it replaced.
 - Named people, such as registered managers.
 
+NHS trusts, health boards and HSC trusts that have no current site are in the
+published reference bundle. This search lists places that have at least one current site.
+
 **How services are decided**
 
 - **Hospital:** the name or the source category says hospital. A dental service
@@ -142,7 +145,8 @@ st.markdown(
 | Column | Meaning |
 | --- | --- |
 | `name` | Site name. When an England NHS site and a Care Quality Commission record are combined, the Care Quality Commission name is kept. |
-| `parent_name` | Organisation that runs the site: the NHS parent, the health board, or the registered provider. |
+| `location_id` | Stable site key. Import it as text. It is not the NHS code or the regulator id. |
+| `parent_name` | Organisation that runs the site: the NHS parent, the health board, or the registered provider. The provider's own classification is in the reference bundle, not guessed from this name. |
 | `address` | Street address. It is not part of the keyword string. |
 | `town` | Town or city. |
 | `postcode` | Site postcode. |
@@ -152,6 +156,7 @@ st.markdown(
 | `region` | Region for an England postcode. Blank elsewhere. |
 | `health_area` | Integrated care board, health board or HSC trust area. Usually from the postcode, so it may not be the organisation that runs the site. |
 | `nhs_code` | NHS organisation code from the Organisation Data Service or Public Health Scotland, when the site has one. |
+| `nhs_code_system` | Which of those two published the code: `ods`, `phs_hospital` or `phs_practice`. |
 | `regulator` | Care Quality Commission, CIW, Care Inspectorate or RQIA, when the site comes from that register. |
 | `regulator_id` | The id on that register. |
 | `service_type` | `hospital`, `care home`, `gp`, `home care` or `other`. |
@@ -161,5 +166,9 @@ st.markdown(
 | `match_string` | Optional. Upper-case keywords with punctuation and common words removed: site name, other names, parent, town, postcode with and without the space, NHS code and regulator id. When included, it is the last column. |
 
 More columns, such as codes for each area, are available under **Columns** on the search page.
+
+The download from this page is the sites in your selection. A separate zip on the
+location data release, `location-reference-bundle.zip`, has the full current tables:
+sites, places, membership, names and identifiers, with a manifest and checksum.
 """
 )

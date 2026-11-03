@@ -99,8 +99,8 @@ def test_download_uses_the_matching_place_name(fixture_mart):
 def test_version_label_and_table_download(fixture_mart):
     app = _search_app(fixture_mart)
     html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
-    assert "v0.2.2 · UK" in html_text
-    assert "v0.2.1" not in html_text
+    assert "v0.3.0 · UK" in html_text
+    assert "v0.2.2" not in html_text
     assert "current sites" not in html_text
     app.text_input[0].set_value("Kent").run()
     assert not app.code
@@ -166,6 +166,13 @@ def test_united_kingdom_lists_every_loaded_country(fixture_mart):
     app.run()
     assert everyone >= _counts(app) >= 1
     assert "flag" not in app.dataframe[0].value.columns
+
+
+def test_a_trust_with_no_sites_is_not_offered(fixture_mart):
+    app = _search_app(fixture_mart)
+    app.text_input[0].set_value("WITHOUT SITES").run()
+    assert not app.exception
+    assert any("No places found" in str(item.value) for item in app.warning)
 
 
 def test_country_narrows_a_place(fixture_mart):

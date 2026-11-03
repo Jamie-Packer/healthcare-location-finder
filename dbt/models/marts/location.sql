@@ -75,5 +75,9 @@ select
     source,
     valid_from,
     valid_to,
+    nhs_code_system,
+    regulator_id_system,
+    location_id_basis,
+    health_area_source,
     match_string
 from cleaned

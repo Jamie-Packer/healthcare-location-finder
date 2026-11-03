@@ -1,5 +1,5 @@
 with boards as (
-    select health_board_code, any_value(health_board_name) as health_board_name
+    select health_board_code, min(health_board_name) as health_board_name
     from {{ ref('stg_phs_council_board') }}
     group by 1
 ),
@@ -13,7 +13,7 @@ board_names as (
 ),
 
 trusts as (
-    select trust_code, any_value(trust_name) as trust_name
+    select trust_code, min(trust_name) as trust_name
     from {{ ref('ni_lcg_trust') }}
     group by 1
 ),
@@ -266,7 +266,7 @@ rqia as (
 
 hsc_hospitals as (
     select
-        md5('hsc:' || upper(hospital.name) || '|' || upper(replace(hospital.postcode, ' ', ''))) as location_id,
+        md5('hsc:' || hospital.site_key) as location_id,
         hospital.name,
         cast(null as varchar) as alt_name,
         cast(null as varchar) as brand_name,
@@ -297,18 +297,26 @@ hsc_hospitals as (
         on trusts.trust_code = hospital.trust_code
 )
 
-select * from welsh_sites
-union all
-select * from practices
-union all
-select * from hospitals
-union all
-select * from scottish_practices
-union all
-select * from care_inspectorate
-union all
-select * from ciw
-union all
-select * from rqia
-union all
-select * from hsc_hospitals
+select
+    combined.*,
+    seed.site_key
+from (
+    select * from welsh_sites
+    union all
+    select * from practices
+    union all
+    select * from hospitals
+    union all
+    select * from scottish_practices
+    union all
+    select * from care_inspectorate
+    union all
+    select * from ciw
+    union all
+    select * from rqia
+    union all
+    select * from hsc_hospitals
+) as combined
+left join {{ ref('ni_hsc_hospitals') }} as seed
+    on combined.source = 'hsc'
+    and combined.location_id = md5('hsc:' || seed.site_key)

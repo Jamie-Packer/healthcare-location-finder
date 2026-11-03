@@ -63,6 +63,7 @@ DEFAULT_COLUMNS = (
 
 ALL_COLUMNS = (
     "name",
+    "location_id",
     "parent_name",
     "address",
     "town",
@@ -81,6 +82,7 @@ ALL_COLUMNS = (
     "health_area_ods_code",
     "parent_code",
     "nhs_code",
+    "nhs_code_system",
     "regulator",
     "regulator_id",
     "service_type",

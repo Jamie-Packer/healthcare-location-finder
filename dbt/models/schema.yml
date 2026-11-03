@@ -19,6 +19,27 @@ models:
           - accepted_values:
               arguments:
                 values: ["hospital", "care home", "gp", "home care", "other"]
+      - name: location_id_basis
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["ods", "cqc", "phs", "ciw", "care_inspectorate", "rqia", "hsc_seed"]
+      - name: nhs_code_system
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["ods", "phs_hospital", "phs_practice"]
+      - name: regulator_id_system
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["cqc_location", "ciw_service", "care_inspectorate_service", "rqia_service"]
+      - name: health_area_source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["source_record", "ons_postcode", "ods_icb_code"]
   - name: stg_cqc_deactivated
     columns:
       - name: cqc_location_id
@@ -27,9 +48,138 @@ models:
     columns:
       - name: entity_id
         data_tests: [unique, not_null]
+      - name: entity_type
+        data_tests: [not_null]
+      - name: name
+        data_tests: [not_null]
+      - name: entity_subtype
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - nhs_trust
+                  - nhs_health_board
+                  - hsc_trust
+                  - independent_healthcare
+                  - nhs_organisation
+                  - social_care
+                  - primary_medical
+                  - dental
+                  - ambulance
+                  - local_authority
+                  - charity
+                  - company
+                  - individual
+                  - unknown
+      - name: site_count
+        data_tests: [not_null]
   - name: entity_site
+    data_tests:
+      - unique_combination:
+          arguments:
+            combination: ["entity_id", "location_id"]
     columns:
       - name: entity_id
-        data_tests: [not_null]
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('search_entity')
+                field: entity_id
       - name: location_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('location')
+                field: location_id
+      - name: membership_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["self", "provider", "postcode", "geography", "health_area"]
+      - name: membership_source
+        data_tests: [not_null]
+  - name: entity_alias
+    columns:
+      - name: alias_id
+        data_tests: [unique, not_null]
+      - name: entity_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('search_entity')
+                field: entity_id
+      - name: alias_text
+        data_tests: [not_null]
+      - name: alias_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["preferred", "alternative", "ods_name", "brand", "known_as", "address_name"]
+      - name: is_preferred
+        data_tests: [not_null]
+      - name: normalisation_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["ok", "empty_after_normalisation"]
+  - name: entity_identifier
+    data_tests:
+      - unique_combination:
+          arguments:
+            combination: ["entity_id", "identifier_system", "identifier_value", "source"]
+    columns:
+      - name: entity_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('search_entity')
+                field: entity_id
+      - name: identifier_system
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - ods
+                  - phs_hospital
+                  - phs_practice
+                  - phs_health_board
+                  - cqc_location
+                  - cqc_provider
+                  - ciw_service
+                  - ciw_provider
+                  - care_inspectorate_service
+                  - care_inspectorate_provider
+                  - rqia_service
+                  - rqia_provider
+                  - hsc_seed
+                  - hsc_trust
+                  - ons_region
+                  - ons_county
+                  - ons_local_authority
+                  - ons_health_area
+                  - ons_postcode
+                  - ods_health_area
+                  - unknown
+      - name: identifier_value
+        data_tests: [not_null]
+      - name: identifier_origin
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["source_assigned", "manually_maintained", "derived"]
+      - name: identifier_role
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["primary", "additional"]
+      - name: source
         data_tests: [not_null]

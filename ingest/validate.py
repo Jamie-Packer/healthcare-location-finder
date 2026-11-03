@@ -272,6 +272,7 @@ def validate_marts(
             f"location rows moved from {previous_rows} to {rows}, "
             f"outside {LOCATION_BAND:.0%}"
         )
+    failures.extend(_reference_failures(mart))
     if failures:
         raise ValidationError(failures)
     return {
@@ -279,3 +280,77 @@ def validate_marts(
         "search_entity": int(search_count),
         "entity_site": int(link_count),
     }
+
+
+def _reference_failures(mart: Path) -> list[str]:
+    """Check the alias and identifier marts when this build produced them."""
+    alias = mart / "entity_alias.parquet"
+    identifier = mart / "entity_identifier.parquet"
+    if not alias.exists() or not identifier.exists():
+        return []
+    location = (mart / "location.parquet").as_posix()
+    search = (mart / "search_entity.parquet").as_posix()
+    links = (mart / "entity_site.parquet").as_posix()
+    connection = duckdb.connect()
+    try:
+        blank_alias, duplicate_alias = connection.execute(
+            f"""
+            select
+                count(*) filter (where alias_text is null or trim(alias_text) = ''),
+                count(*) - count(distinct alias_id)
+            from read_parquet('{alias.as_posix()}')
+            """
+        ).fetchone()
+        duplicate_identifier = connection.execute(
+            f"""
+            select count(*) from (
+                select entity_id, identifier_system, identifier_value, source
+                from read_parquet('{identifier.as_posix()}')
+                group by all
+                having count(*) > 1
+            )
+            """
+        ).fetchone()[0]
+        dangling_alias = connection.execute(
+            f"""
+            select count(*)
+            from read_parquet('{alias.as_posix()}') as alias
+            anti join read_parquet('{search}') as entity
+                on alias.entity_id = entity.entity_id
+            """
+        ).fetchone()[0]
+        unmapped_sites = connection.execute(
+            f"""
+            select count(*)
+            from read_parquet('{location}') as location
+            anti join read_parquet('{search}') as entity
+                on entity.entity_type = 'site'
+                and entity.location_id = location.location_id
+            """
+        ).fetchone()[0]
+        duplicate_links = connection.execute(
+            f"""
+            select count(*) from (
+                select entity_id, location_id
+                from read_parquet('{links}')
+                group by all
+                having count(*) > 1
+            )
+            """
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    failures: list[str] = []
+    if blank_alias:
+        failures.append(f"{blank_alias} aliases are blank")
+    if duplicate_alias:
+        failures.append(f"{duplicate_alias} alias ids are duplicated")
+    if duplicate_identifier:
+        failures.append(f"{duplicate_identifier} identifiers are duplicated")
+    if dangling_alias:
+        failures.append(f"{dangling_alias} aliases do not match an entity")
+    if unmapped_sites:
+        failures.append(f"{unmapped_sites} sites have no site entity")
+    if duplicate_links:
+        failures.append(f"{duplicate_links} memberships are duplicated")
+    return failures

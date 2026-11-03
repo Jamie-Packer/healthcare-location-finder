@@ -26,3 +26,4 @@ snapshots:
 
 vars:
   raw_root: "data/raw"
+  fixtures: false

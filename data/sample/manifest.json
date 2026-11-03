@@ -1,8 +1,14 @@
 {
-  "built_at": "2026-10-25T18:00:00+00:00",
+  "schema_version": "1.0.0",
+  "build_id": "sample",
+  "built_at": "2026-11-03T00:00:00+00:00",
+  "data_scope": "current",
+  "build_status": "sample",
   "sample": true,
   "sources": [],
   "row_counts": {
-    "location": 47
+    "location": 52,
+    "search_entity": 131,
+    "entity_site": 294
   }
 }

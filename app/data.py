@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -70,7 +71,7 @@ def _download_release() -> Path | None:
     cache = Path(os.environ.get("LOCATIONS_CACHE_DIR", Path.home() / ".cache" / "healthcare-location-reference"))
     staging = cache.with_name(cache.name + ".partial")
     session = requests.Session()
-    session.headers["User-Agent"] = "healthcare-location-reference/0.2"
+    session.headers["User-Agent"] = "healthcare-location-reference/0.3"
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
@@ -86,6 +87,7 @@ def _download_release() -> Path | None:
                 raise RuntimeError(f"{name} is too small to be the published mart")
             if name.endswith(".json"):
                 json.loads(target.read_text(encoding="utf-8"))
+        _check_published_hashes(staging)
     except (requests.RequestException, OSError, RuntimeError, ValueError):
         shutil.rmtree(staging, ignore_errors=True)
         return None
@@ -93,6 +95,23 @@ def _download_release() -> Path | None:
         shutil.rmtree(cache)
     staging.rename(cache)
     return cache
+
+
+def _check_published_hashes(directory: Path) -> None:
+    """Reject a download whose parquet files do not match the manifest."""
+    manifest = load_manifest(directory)
+    records = [*(manifest.get("parquet") or []), *(manifest.get("outputs") or [])]
+    for item in records:
+        name = str(item.get("filename") or "")
+        digest = item.get("sha256")
+        if not digest or not name.endswith(".parquet"):
+            continue
+        path = directory / name
+        if not path.exists():
+            continue
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != digest:
+            raise RuntimeError(f"{name} does not match the published checksum")
 
 
 class ReleaseUnavailable(RuntimeError):
