@@ -18,3 +18,4 @@ select
     )::date as valid_to
 from source
 where nullif(trim(cqc_location_id), '') is not null
+    and trim(cqc_location_id) <> 'Location ID'

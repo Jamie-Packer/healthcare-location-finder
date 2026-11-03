@@ -4,3 +4,8 @@ cqc_location_id,name,ods_code,postcode,town,brand_name,provider_id,provider_name
 1-102,Example Surgery,,TN24 0LZ,Ashford,,1-202,Example Surgery,N,Primary medical services,GP,South East,Ashford,2012-06-01,N,Example Street,
 1-103,Dormant Clinic,,TN24 0LZ,Ashford,,1-202,Example Surgery,N,Primary medical services,GP,South East,Ashford,2012-06-01,Y,Example Street,
 1-104,Example Home Care,,TN24 0LZ,Ashford,,1-203,Example Home Care Ltd,N,Adult social care,Community based adult social care services,South East,Ashford,2018-03-01,N,Example Lane,
+1-105,Example Shared Name,,TN24 0LZ,Ashford,,1-205,Example Shared Provider,N,Adult social care,Clinic,South East,Ashford,2019-01-01,N,Example Road,
+1-106,Example Shared Name,,ME7 8YH,Gillingham,,1-205,Example Shared Provider,N,Adult social care,Clinic,South East,Medway,2019-02-01,N,Example Close,
+1-107,Example Regulator Ward,RX9,TN24 0LZ,Ashford,Ward Brand,RXX,East Example NHS Foundation Trust,N,NHS Healthcare,Clinic,South East,Ashford,2016-01-01,N,Example Road,
+1-108,Example Punctuation Clinic,,TN24 0LZ,Ashford,***,1-204,Example Punctuation Provider,N,Adult social care,Clinic,South East,Ashford,2017-01-01,N,Example Lane,
+Location ID,Location Name,Location ODS Code,TN24 0LZ,Ashford,,1-200,East Example NHS Foundation Trust,N,NHS Healthcare,Clinic,South East,Ashford,2017-01-01,N,Example Lane,

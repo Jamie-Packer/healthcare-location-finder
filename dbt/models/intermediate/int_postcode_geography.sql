@@ -13,8 +13,8 @@ boards as (
 trusts as (
     select
         lcg_code,
-        any_value(trust_code) as trust_code,
-        any_value(trust_name) as trust_name
+        min(trust_code) as trust_code,
+        min(trust_name) as trust_name
     from {{ ref('ni_lcg_trust') }}
     group by lcg_code
 )

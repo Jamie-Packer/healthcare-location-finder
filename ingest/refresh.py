@@ -20,6 +20,8 @@ import duckdb
 import requests
 
 from ingest.build import database_path, dbt_build
+from ingest.bundle import git_commit, publish_bundle, worktree_dirty
+from ingest.contract import SCHEMA_VERSION, contract_sha256
 from ingest.convert import OUTPUT_FIELDS
 from ingest.download import RAW, discover_spec, http_session, land_spec, prepare_cqc, prepare_nspl
 from ingest.history import export_history, restore_history
@@ -54,10 +56,68 @@ class Landed:
     rows: int | None = None
     error: str | None = None
     stale_since: str | None = None
+    checked_at: str = ""
 
 
 def _enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
+
+
+def _timestamp() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def build_status(statuses: set[str]) -> str:
+    """normal, degraded when a source was reused, partial when a source was left out."""
+    if "missing" in statuses:
+        return "partial"
+    if "fallback" in statuses:
+        return "degraded"
+    return "normal"
+
+
+def coverage_effect(status: str) -> str:
+    if status == "fallback":
+        return "last_good_copy"
+    if status == "missing":
+        return "omitted"
+    return "included"
+
+
+def _commit() -> str | None:
+    return git_commit()
+
+
+def _same_contract(previous: dict) -> bool:
+    """False when the published release predates this output contract."""
+    return (
+        previous.get("schema_version") == SCHEMA_VERSION
+        and previous.get("contract_sha256") == contract_sha256()
+    )
+
+
+def _build_id(built_at: str, commit: str | None) -> str:
+    stamp = datetime.fromisoformat(built_at).strftime("%Y%m%dT%H%M%SZ")
+    return f"{stamp}-{(commit or 'local')[:7]}"
+
+
+def _conflict_count(database: Path) -> int:
+    if not database.exists():
+        return 0
+    connection = duckdb.connect(database.as_posix())
+    try:
+        found = connection.execute(
+            """
+            select count(*)
+            from information_schema.tables
+            where table_name = 'entity_conflict'
+            """
+        ).fetchone()[0]
+        if not found:
+            return 0
+        return int(connection.execute("select count(*) from entity_conflict").fetchone()[0])
+    finally:
+        connection.close()
 
 
 def repository() -> str:
@@ -191,7 +251,7 @@ def _accept(spec: SourceSpec, remote: RemoteFile, previous: dict | None) -> Land
         raise ValidationError([
             f"{spec.key} rows moved outside {spec.row_band:.0%} of {_previous_rows(previous, spec)}"
         ])
-    return Landed(spec, remote, "ok", rows=rows)
+    return Landed(spec, remote, "ok", rows=rows, checked_at=_timestamp())
 
 
 def _fail(spec: SourceSpec, previous: dict | None, cache: Path, error: str) -> Landed:
@@ -203,10 +263,18 @@ def _fail(spec: SourceSpec, previous: dict | None, cache: Path, error: str) -> L
         except ValidationError:
             rows = None
         stale = (old or {}).get("stale_since") or date.today().isoformat()
-        return Landed(spec, _remote_from_previous(spec, old), "fallback", rows=rows, error=error, stale_since=stale)
+        return Landed(
+            spec,
+            _remote_from_previous(spec, old),
+            "fallback",
+            rows=rows,
+            error=error,
+            stale_since=stale,
+            checked_at=_timestamp(),
+        )
     if not spec.required:
         _placeholder(spec)
-    return Landed(spec, None, "missing", error=error)
+    return Landed(spec, None, "missing", error=error, checked_at=_timestamp())
 
 
 def _source_record(item: Landed) -> dict:
@@ -228,6 +296,8 @@ def _source_record(item: Landed) -> dict:
         "status": item.status,
         "stale_since": item.stale_since,
         "error": item.error,
+        "checked_at": item.checked_at,
+        "coverage_effect": coverage_effect(item.status),
     }
 
 
@@ -271,9 +341,12 @@ def _notes(manifest: dict, landed: list[Landed]) -> str:
     stale = [item for item in landed if item.status == "fallback"]
     missing = [item for item in landed if item.status == "missing"]
     lines = [
-        f"Location reference built {manifest['built_at']}.",
+        f"Location reference {manifest.get('build_id', '')} built {manifest['built_at']}.",
+        f"Schema {manifest.get('schema_version', '')}. Status {manifest.get('build_status', '')}.",
         _country_sentence(),
     ]
+    if manifest.get("bundle_sha256"):
+        lines.append(f"Bundle sha256 {manifest['bundle_sha256']}.")
     if stale:
         names = ", ".join(f"{item.spec.publisher} ({item.spec.key})" for item in stale)
         lines.append(f"Stale sources, last good copy kept: {names}.")
@@ -286,14 +359,25 @@ def _notes(manifest: dict, landed: list[Landed]) -> str:
     return " ".join(lines)
 
 
-def _manifest(landed: list[Landed], raw_counts: dict, row_counts: dict) -> dict:
+def _manifest(landed: list[Landed], raw_counts: dict, row_counts: dict, conflicts: int) -> dict:
     nspl = next((item.remote.edition for item in landed if item.spec.kind == "nspl" and item.remote), None)
+    built_at = _timestamp()
+    commit = _commit()
     return {
-        "built_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "schema_version": SCHEMA_VERSION,
+        "contract_sha256": contract_sha256(),
+        "build_id": _build_id(built_at, commit),
+        "built_at": built_at,
+        "commit": commit,
+        "worktree_dirty": worktree_dirty(),
+        "repository": repository(),
+        "data_scope": "current",
+        "build_status": build_status({item.status for item in landed}),
         "nspl_edition": nspl,
         "sources": [_source_record(item) for item in landed],
         "raw_counts": raw_counts,
         "row_counts": row_counts,
+        "validation": {"conflicts": conflicts},
     }
 
 
@@ -340,7 +424,7 @@ def run(force: bool) -> None:
     previous = previous_manifest(session)
     cache = PREVIOUS / CACHE_NAME
     _download_asset(session, CACHE_NAME, cache)
-    if previous and _unchanged(session, previous, force):
+    if previous and _same_contract(previous) and _unchanged(session, previous, force):
         _finish("skip", "sources unchanged", {"ok": True, "action": "skip", "reason": "sources unchanged"})
         return
 
@@ -398,8 +482,23 @@ def run(force: bool) -> None:
     except ValidationError as exc:
         _finish("fail", "mart checks failed", {"ok": False, "failures": exc.failures})
         raise SystemExit(1) from exc
-    manifest = _manifest(landed, raw_counts, row_counts)
-    write_json(MART / "manifest.json", manifest)
+    for name in (
+        "location.parquet",
+        "search_entity.parquet",
+        "entity_site.parquet",
+        "entity_identifier.parquet",
+    ):
+        _download_asset(session, name, PREVIOUS / name)
+    manifest = _manifest(landed, raw_counts, row_counts, _conflict_count(database))
+    try:
+        manifest = publish_bundle(
+            MART,
+            manifest,
+            PREVIOUS if (PREVIOUS / "location.parquet").exists() else None,
+        )
+    except ValidationError as exc:
+        _finish("fail", "bundle checks failed", {"ok": False, "failures": exc.failures})
+        raise SystemExit(1) from exc
     NOTES.write_text(_notes(manifest, landed) + "\n", encoding="utf-8")
     _write_cache(MART / CACHE_NAME)
     stale = [item.spec.key for item in landed if item.status != "ok"]

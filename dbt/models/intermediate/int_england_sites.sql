@@ -44,17 +44,20 @@ code_counts as (
 ),
 
 orgs as (
-    select organisation_code, any_value(name) as name
+    select organisation_code, name
     from (
-        select organisation_code, name
+        select organisation_code, name, 1 as preference
         from {{ ref('stg_ods_trusts') }}
         where valid_to is null
         union all
-        select organisation_code, name
+        select organisation_code, name, 2
         from {{ ref('stg_ods_independent_providers') }}
         where valid_to is null
     ) parents
-    group by 1
+    qualify row_number() over (
+        partition by organisation_code
+        order by preference, name
+    ) = 1
 ),
 
 merged as (
@@ -169,8 +172,13 @@ cqc_rest as (
     where cqc.cqc_location_id not in (select regulator_id from merged)
 )
 
-select * from merged
-union all
-select * from ods_only
-union all
-select * from cqc_rest
+select
+    labelled.*,
+    cast(null as varchar) as seed_key
+from (
+    select * from merged
+    union all
+    select * from ods_only
+    union all
+    select * from cqc_rest
+) as labelled

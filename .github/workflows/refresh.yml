@@ -66,19 +66,32 @@ jobs:
           set -euo pipefail
           tag=$(python -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
           notes=$(python -c 'from pathlib import Path; print(Path("data/build/release-notes.txt").read_text(encoding="utf-8").strip())')
+          build_id=$(python -c 'from pathlib import Path; print(Path("data/build/build_id.txt").read_text(encoding="utf-8").strip())')
+          immutable="data-${build_id}"
+          assets=(
+            data/mart/location.parquet
+            data/mart/search_entity.parquet
+            data/mart/entity_site.parquet
+            data/mart/entity_alias.parquet
+            data/mart/entity_identifier.parquet
+            data/mart/location_history.parquet
+            data/mart/manifest.json
+            data/mart/source-cache.zip
+            data/mart/location-reference-bundle.zip
+            data/mart/location-reference-bundle.zip.sha256
+          )
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --title "Location data" --notes "$notes"
           else
             gh release edit "$tag" --notes "$notes"
           fi
-          gh release upload "$tag" \
-            data/mart/location.parquet \
-            data/mart/search_entity.parquet \
-            data/mart/entity_site.parquet \
-            data/mart/location_history.parquet \
-            data/mart/manifest.json \
-            data/mart/source-cache.zip \
-            --clobber
+          gh release upload "$tag" "${assets[@]}" --clobber
+          if gh release view "$immutable" >/dev/null 2>&1; then
+            echo "Release ${immutable} already exists and is left unchanged."
+          else
+            gh release create "$immutable" --title "Location reference ${build_id}" --notes "$notes"
+            gh release upload "$immutable" "${assets[@]}"
+          fi
 
       - name: Record an unchanged check
         if: steps.refresh.outputs.action == 'skip'

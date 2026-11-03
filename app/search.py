@@ -69,8 +69,10 @@ COLUMN_LABELS = {
     "health_area_type": "health_area_type",
     "health_area_code": "health_area_code",
     "health_area_ods_code": "health_area_ods_code",
+    "location_id": "location_id",
     "parent_code": "parent_code",
     "nhs_code": "nhs_code",
+    "nhs_code_system": "nhs_code_system",
     "regulator": "regulator",
     "regulator_id": "regulator_id",
     "service_type": "service_type",
@@ -117,11 +119,17 @@ def _search(search_path: str, query: str, stamp: str) -> pd.DataFrame:
     order = "case entity_type " + " ".join(
         f"when '{entity_type}' then {index}" for index, entity_type in enumerate(TYPE_ORDER)
     ) + " else 99 end"
+    columns = {
+        row[0]
+        for row in _connection().execute("describe select * from read_parquet(?)", [search_path]).fetchall()
+    }
+    current_only = "and site_count > 0" if "site_count" in columns else ""
     return _connection().cursor().execute(
         f"""
         select entity_id, entity_type, name, code
         from read_parquet(?)
         where search_text ilike ? escape '\\'
+        {current_only}
         order by
             case
                 when upper(coalesce(code, '')) = upper(?) then 0
@@ -163,6 +171,11 @@ def _query_sites(
     limit: int | None,
 ) -> pd.DataFrame:
     filter_sql, filter_params = _filters(services, countries)
+    available = {
+        row[0]
+        for row in _connection().execute("describe select * from read_parquet(?)", [location_path]).fetchall()
+    }
+    columns = tuple(name for name in columns if name in available) or ("name",)
     selected = ", ".join(f"location.{name}" for name in columns)
     limit_sql = f"limit {int(limit)}" if limit else ""
     if entity_id is None:
@@ -425,7 +438,7 @@ def main() -> None:
         if st.button("Full guide", width="stretch"):
             st.switch_page("help.py")
     st.html(
-        '<p class="version">v0.2.2 · UK</p>'
+        '<p class="version">v0.3.0 · UK</p>'
         f"<style>{_icon_css(_selected_country())}</style>"
     )
     st.html(

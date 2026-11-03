@@ -28,3 +28,4 @@ select
     nullif(upper(trim(dormant)), '') as dormant
 from source
 where nullif(trim(cqc_location_id), '') is not null
+    and trim(cqc_location_id) <> 'Location ID'

@@ -36,7 +36,8 @@ python -m venv .venv
 
 Other commands:
 
-- `python -m ingest.refresh` downloads the current source files, checks them, builds the marts and writes `data/mart/manifest.json`.
+- `python -m ingest.refresh` downloads the current source files, checks them, builds the marts and writes `data/mart/manifest.json` and `data/mart/location-reference-bundle.zip`.
+- `python -m ingest.bundle verify data/mart/location-reference-bundle.zip` checks that zip against its manifest.
 - `python -m ingest.build --fixtures` builds a tiny test project used to check the models.
 - `python -m pytest` runs the tests.
 
@@ -71,9 +72,11 @@ Office for National Statistics abbreviations: `CTRY` country, `RGN` region, `CTY
 
 ## Refresh
 
-A GitHub Actions workflow checks the sources every Monday at 04:00 UTC (04:00 GMT, or 05:00 during British Summer Time). When a source has changed and the row counts stay inside the usual range, it replaces the `data-latest` release. Each release also stores `source-cache.zip`, the last good copy of every source.
+A GitHub Actions workflow checks the sources every Monday at 04:00 UTC (04:00 GMT, or 05:00 during British Summer Time). When a source has changed and the row counts stay inside the usual range, it replaces the `data-latest` release and creates one immutable release named `data-<build_id>`. It also publishes when the source files are unchanged but the output contract has changed, so a new schema is not left unpublished. The second release is not replaced by a later run. A run that finds nothing to publish does not create one.
 
-If one source fails, the refresh reuses its last good copy, marks it stale, and still publishes the sources that worked. The workflow run then fails and opens an issue naming the source. If a required England source has no saved copy, nothing is published and the previous release stays.
+`data-latest` includes the parquet tables, `manifest.json`, `source-cache.zip`, and `location-reference-bundle.zip` with a `.sha256` file beside it. The zip is the current reference: sites, places, membership, names and identifiers, plus the dictionary and coverage notes for that build. How to check, load and replace that zip is in [docs/reference_bundle.md](docs/reference_bundle.md). The column definitions are in [docs/data_dictionary.md](docs/data_dictionary.md).
+
+If one source fails, the refresh reuses its last good copy, marks it stale, and still publishes the sources that worked. The manifest status is `degraded` when a source was reused and `partial` when a source was left out. The workflow run then fails and opens an issue naming the source. If a required England source has no saved copy, nothing is published and the previous release stays. The bundle checks run before either release is updated. A failed check leaves both releases as they were.
 
 The first build after a new country is added needs a manual run with "force" ticked, because the new rows fall outside the usual range.
 

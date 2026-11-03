@@ -16,6 +16,7 @@ select
     nullif(trim(local_authority), '') as local_authority,
     nullif(trim(provider_urn), '') as provider_urn,
     nullif(trim(provider_name), '') as provider_name,
+    nullif(trim(provider_type), '') as provider_type,
     nullif(trim(company_number), '') as company_number,
     nullif(trim(charity_number), '') as charity_number
 from source

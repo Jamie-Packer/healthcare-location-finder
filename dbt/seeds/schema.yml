@@ -1,0 +1,25 @@
+version: 2
+
+seeds:
+  - name: ni_hsc_hospitals
+    config:
+      column_types:
+        name: varchar
+        town: varchar
+        postcode: varchar
+        trust_code: varchar
+        checked_on: varchar
+        site_key: varchar
+    columns:
+      - name: site_key
+        data_tests: [unique, not_null]
+      - name: name
+        data_tests: [not_null]
+  - name: provider_subtype_map
+    columns:
+      - name: source
+        data_tests: [not_null]
+      - name: category
+        data_tests: [not_null]
+      - name: entity_subtype
+        data_tests: [not_null]

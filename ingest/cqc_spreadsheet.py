@@ -105,7 +105,9 @@ def convert_locations(source: Path, dest: Path, columns: dict[str, str]) -> int:
                             else ""
                             for key, label in columns.items()
                         }
-                        if row.get("cqc_location_id"):
+                        location_id = row.get("cqc_location_id")
+                        # The sheet repeats its header. That row is not a location.
+                        if location_id and location_id != columns["cqc_location_id"]:
                             writer.writerow(row)
                             written += 1
                     elem.clear()
