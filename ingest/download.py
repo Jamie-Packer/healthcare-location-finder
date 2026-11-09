@@ -258,7 +258,7 @@ def discover_spec(session: requests.Session, spec: SourceSpec, today=None) -> Re
     if spec.kind == "ods":
         return RemoteFile(key=spec.key, url=ODS.format(report=spec.report))
     if spec.kind == "cqc":
-        return discover_cqc(session, today, only=spec.key)[spec.key]
+        return discover_cqc(session, today, wanted=spec.key)[spec.key]
     if spec.kind == "nspl":
         return discover_nspl(session)
     if spec.kind == "ckan":

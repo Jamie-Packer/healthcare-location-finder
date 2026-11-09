@@ -15,13 +15,6 @@ from urllib.parse import quote
 import requests
 
 ODS = "https://www.odsdatasearchandexport.nhs.uk/api/getReport?report={report}"
-ODS_REPORTS = {
-    "ods/etr.csv": "etr",
-    "ods/ets.csv": "ets",
-    "ods/ephp.csv": "ephp",
-    "ods/ephpsite.csv": "ephpsite",
-    "ods/eother.csv": "eother",
-}
 CQC_PAGE = "https://www.cqc.org.uk/about-us/transparency/using-cqc-data"
 CQC_ACTIVE = "cqc/active_locations.ods"
 CQC_DEACTIVATED = "cqc/deactivated_locations.ods"
@@ -94,13 +87,6 @@ class RemoteFile:
     size: int | None = None
 
 
-def discover_ods() -> dict[str, RemoteFile]:
-    return {
-        key: RemoteFile(key=key, url=ODS.format(report=report))
-        for key, report in ODS_REPORTS.items()
-    }
-
-
 def cqc_file_date(url: str) -> date | None:
     match = CQC_DATED.search(html.unescape(url))
     if not match:
@@ -159,29 +145,29 @@ def candidate_cqc_urls(today: date, kind: str) -> list[str]:
 
 
 def _newest_present(session: requests.Session, urls: list[str]) -> str | None:
-    found: list[tuple[date, str]] = []
+    """Return the first URL that answers with a file, newest candidate first."""
     for url in urls:
         try:
             response = session.head(url, allow_redirects=True, timeout=(15, 30))
         except requests.RequestException:
             continue
-        stamp = cqc_file_date(url)
-        if response.status_code == 200 and stamp is not None:
-            found.append((stamp, url))
-    if not found:
-        return None
-    return max(found)[1]
+        if response.status_code != 200:
+            continue
+        if "text/html" in response.headers.get("Content-Type", ""):
+            continue
+        return url
+    return None
 
 
 def discover_cqc(
     session: requests.Session,
     today: date | None = None,
-    only: str | None = None,
+    wanted: str | None = None,
 ) -> dict[str, RemoteFile]:
     """Find the current CQC spreadsheets.
 
-    Pass only to ask for one file. A miss raises for that file, and the other
-    file is left alone. A full lookup returns whichever files were found.
+    Pass wanted to ask for one file. A miss raises for that file, and the
+    other file is left alone.
     """
     today = today or date.today()
     response = session.get(CQC_PAGE, timeout=(30, 60))
@@ -191,18 +177,14 @@ def discover_cqc(
         CQC_ACTIVE: "HSCA_Active_Locations",
         CQC_DEACTIVATED: "Deactivated_Locations",
     }
-    if only is not None:
-        chosen = {key: item for key, item in chosen.items() if key == only}
     for key, kind in probes.items():
-        if only is not None and key != only:
+        if wanted is not None and key != wanted:
             continue
         if key in chosen:
             continue
         url = _newest_present(session, candidate_cqc_urls(today, kind))
         if url is None:
-            if only is not None:
-                raise RuntimeError(f"No current CQC file found for {kind}")
-            continue
+            raise RuntimeError(f"No current CQC file found for {kind}")
         stamp = cqc_file_date(url)
         chosen[key] = RemoteFile(
             key=key,
@@ -257,13 +239,6 @@ def discover_nspl(session: requests.Session) -> RemoteFile:
         modified=str(item.get("modified") or ""),
         publisher_date=edition,
     )
-
-
-def discover_sources(session: requests.Session, today: date | None = None) -> dict[str, RemoteFile]:
-    found = discover_ods()
-    found.update(discover_cqc(session, today))
-    found[NSPL_KEY] = discover_nspl(session)
-    return found
 
 
 def identity_unchanged(current: RemoteFile, previous: dict | None) -> bool:
