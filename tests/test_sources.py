@@ -1,6 +1,8 @@
 from datetime import date
 
 import duckdb
+import pytest
+import requests
 
 from ingest.download import build_postcode_parquet, postcode_member, rewrite_name_csv
 from ingest.sources import (
@@ -10,9 +12,18 @@ from ingest.sources import (
     RemoteFile,
     candidate_cqc_urls,
     choose_nspl_item,
+    cqc_file_date,
     cqc_links_from_html,
+    discover_cqc,
     identity_unchanged,
     pick_postcode_columns,
+)
+
+LIVE_ACTIVE = (
+    "https://www.cqc.org.uk/system/files/2026-11/2_November_2026_HSCA_Active_Locations.ods"
+)
+LIVE_DEACTIVATED = (
+    "https://www.cqc.org.uk/system/files/2026-11/02_November_2026_Deactivated_Locations.ods"
 )
 
 PAGE = """
@@ -34,6 +45,61 @@ def test_cqc_fallback_includes_the_first_and_recent_days():
     assert any(url.endswith("01_October_2026_HSCA_Active_Locations.ods") for url in urls)
     assert any(url.endswith("13_October_2026_HSCA_Active_Locations.ods") for url in urls)
     assert any("/2026-09/01_September_2026_" in url for url in urls)
+
+
+def test_cqc_file_date_accepts_an_unpadded_day():
+    assert cqc_file_date(LIVE_ACTIVE) == date(2026, 11, 2)
+    assert cqc_file_date(LIVE_DEACTIVATED) == date(2026, 11, 2)
+
+
+def test_cqc_page_keeps_an_unpadded_active_file():
+    page = f'<a href="{LIVE_ACTIVE}">active</a><a href="{LIVE_DEACTIVATED}">closed</a>'
+    found = cqc_links_from_html(page)
+    assert found[CQC_ACTIVE].publisher_date == "2026-11-02"
+    assert found[CQC_ACTIVE].url == LIVE_ACTIVE
+    assert found[CQC_DEACTIVATED].url == LIVE_DEACTIVATED
+
+
+def test_cqc_fallback_tries_both_day_paddings():
+    urls = candidate_cqc_urls(date(2026, 11, 9), "HSCA_Active_Locations")
+    assert any(url.endswith("2_November_2026_HSCA_Active_Locations.ods") for url in urls)
+    assert any(url.endswith("02_November_2026_HSCA_Active_Locations.ods") for url in urls)
+
+
+class _PageResponse:
+    def __init__(self, text: str):
+        self.text = text
+        self.status_code = 200
+        self.headers: dict[str, str] = {}
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+class _PageSession:
+    def __init__(self, page: str):
+        self.page = page
+        self.heads: list[str] = []
+
+    def get(self, url: str, timeout=None):
+        return _PageResponse(self.page)
+
+    def head(self, url: str, allow_redirects=True, timeout=None):
+        self.heads.append(url)
+        raise requests.RequestException("head is not required")
+
+
+def test_one_cqc_file_can_be_missing_without_dropping_the_other():
+    session = _PageSession(f'<a href="{LIVE_DEACTIVATED}">closed</a>')
+    found = discover_cqc(session, date(2026, 11, 9), only=CQC_DEACTIVATED)
+    assert found[CQC_DEACTIVATED].url == LIVE_DEACTIVATED
+    assert found[CQC_DEACTIVATED].publisher_date == "2026-11-02"
+    assert CQC_ACTIVE not in found
+    assert session.heads == [LIVE_DEACTIVATED]
+
+    session = _PageSession(f'<a href="{LIVE_DEACTIVATED}">closed</a>')
+    with pytest.raises(RuntimeError, match="No current CQC file found for HSCA_Active_Locations"):
+        discover_cqc(session, date(2026, 11, 9), only=CQC_ACTIVE)
 
 
 def test_nspl_choice_ignores_user_guides_and_older_editions():

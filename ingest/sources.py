@@ -52,7 +52,7 @@ FILE_MONTHS = {name: number for number, name in enumerate(
     start=1,
 )}
 CQC_DATED = re.compile(
-    r"/(\d{4})-(\d{2})/(\d{2})_([A-Za-z]+)_(\d{4})_(HSCA_Active_Locations|Deactivated_Locations)\.ods",
+    r"/(\d{4})-(\d{2})/(\d{1,2})_([A-Za-z]+)_(\d{4})_(HSCA_Active_Locations|Deactivated_Locations)\.ods",
     re.IGNORECASE,
 )
 POSTCODE_COLUMNS = {
@@ -138,15 +138,23 @@ def cqc_links_from_html(page: str) -> dict[str, RemoteFile]:
 
 
 def candidate_cqc_urls(today: date, kind: str) -> list[str]:
-    """Dates to try when the data page has no link: the 1st, and the latest week."""
-    previous = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
-    days = {previous, today.replace(day=1), today}
-    for offset in range(0, 7):
-        days.add(today - timedelta(days=offset))
+    """Dates to try when the data page has no dated link.
+
+    Every day from the 1st of the previous month through today. Days 1-9 are
+    published both as 2_November_... and 02_November_....
+    """
+    start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
     urls = []
-    for stamp in sorted(days, reverse=True):
-        name = f"{stamp.day:02d}_{stamp.strftime('%B')}_{stamp.year}_{kind}.ods"
-        urls.append(f"https://www.cqc.org.uk/system/files/{stamp:%Y-%m}/{name}")
+    stamp = today
+    while stamp >= start:
+        month = stamp.strftime("%B")
+        days = [f"{stamp.day:02d}"]
+        if stamp.day < 10:
+            days.append(str(stamp.day))
+        for day in days:
+            name = f"{day}_{month}_{stamp.year}_{kind}.ods"
+            urls.append(f"https://www.cqc.org.uk/system/files/{stamp:%Y-%m}/{name}")
+        stamp -= timedelta(days=1)
     return urls
 
 
@@ -165,7 +173,16 @@ def _newest_present(session: requests.Session, urls: list[str]) -> str | None:
     return max(found)[1]
 
 
-def discover_cqc(session: requests.Session, today: date | None = None) -> dict[str, RemoteFile]:
+def discover_cqc(
+    session: requests.Session,
+    today: date | None = None,
+    only: str | None = None,
+) -> dict[str, RemoteFile]:
+    """Find the current CQC spreadsheets.
+
+    Pass only to ask for one file. A miss raises for that file, and the other
+    file is left alone. A full lookup returns whichever files were found.
+    """
     today = today or date.today()
     response = session.get(CQC_PAGE, timeout=(30, 60))
     response.raise_for_status()
@@ -174,12 +191,18 @@ def discover_cqc(session: requests.Session, today: date | None = None) -> dict[s
         CQC_ACTIVE: "HSCA_Active_Locations",
         CQC_DEACTIVATED: "Deactivated_Locations",
     }
+    if only is not None:
+        chosen = {key: item for key, item in chosen.items() if key == only}
     for key, kind in probes.items():
+        if only is not None and key != only:
+            continue
         if key in chosen:
             continue
         url = _newest_present(session, candidate_cqc_urls(today, kind))
         if url is None:
-            raise RuntimeError(f"No current CQC file found for {kind}")
+            if only is not None:
+                raise RuntimeError(f"No current CQC file found for {kind}")
+            continue
         stamp = cqc_file_date(url)
         chosen[key] = RemoteFile(
             key=key,
