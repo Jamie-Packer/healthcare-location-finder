@@ -4,6 +4,7 @@ read_csv(
     header = false,
     all_varchar = true,
     quote = '"',
+    escape = '"',
     delim = ',',
     strict_mode = false,
     null_padding = true,
@@ -89,11 +90,11 @@ read_csv(
     header = true,
     all_varchar = true,
     quote = '"',
+    escape = '"',
     delim = ',',
     strict_mode = false,
     null_padding = true,
     parallel = false,
-    max_line_size = 2000000,
-    ignore_errors = true
+    max_line_size = 2000000
 )
 {% endmacro %}

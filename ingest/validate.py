@@ -56,6 +56,7 @@ def _ods_shape(path: Path) -> tuple[int, int]:
             header = false,
             all_varchar = true,
             quote = '"',
+            escape = '"',
             delim = ',',
             strict_mode = false,
             null_padding = true,
@@ -64,57 +65,53 @@ def _ods_shape(path: Path) -> tuple[int, int]:
         )
     """
     connection = duckdb.connect()
-    columns = len(connection.sql(f"select * {query} limit 0").columns)
-    count = connection.sql(f"select count(*) {query}").fetchall()[0][0]
-    connection.close()
+    try:
+        columns = len(connection.sql(f"select * {query} limit 0").columns)
+        count = connection.sql(f"select count(*) {query}").fetchall()[0][0]
+    finally:
+        connection.close()
     return int(count), columns
 
 
 def _csv_rows(path: Path) -> tuple[int, list[str]]:
+    query = f"""
+        from read_csv(
+            '{path.as_posix()}',
+            header = true,
+            all_varchar = true,
+            quote = '"',
+            escape = '"',
+            delim = ',',
+            strict_mode = false,
+            null_padding = true,
+            parallel = false,
+            max_line_size = 2000000
+        )
+    """
     connection = duckdb.connect()
-    relation = connection.sql(
-        f"""
-        select * from read_csv(
-            '{path.as_posix()}',
-            header = true,
-            all_varchar = true,
-            strict_mode = false,
-            null_padding = true,
-            parallel = false,
-            max_line_size = 2000000,
-            ignore_errors = true
-        )
-        """
-    )
-    columns = list(relation.columns)
-    count = connection.sql(
-        f"""
-        select count(*) from read_csv(
-            '{path.as_posix()}',
-            header = true,
-            all_varchar = true,
-            strict_mode = false,
-            null_padding = true,
-            parallel = false,
-            max_line_size = 2000000,
-            ignore_errors = true
-        )
-        """
-    ).fetchall()[0][0]
-    connection.close()
+    try:
+        columns = list(connection.sql(f"select * {query} limit 0").columns)
+        count = connection.sql(f"select count(*) {query}").fetchall()[0][0]
+    finally:
+        connection.close()
     return int(count), columns
 
 
-def measure_source(raw: Path, spec: SourceSpec) -> int:
-    """Row count for one landed file. Raises when the file breaks its contract."""
+def _check_source(raw: Path, spec: SourceSpec) -> tuple[str, int | None, list[str]]:
     relative, header = _product(spec)
     path = raw / relative
     if not path.exists():
-        raise ValidationError([f"{relative} is missing"])
+        return relative, None, [f"{relative} is missing"]
     if path.suffix == ".parquet":
         connection = duckdb.connect()
-        rows = int(connection.sql(f"select count(*) from read_parquet('{path.as_posix()}')").fetchall()[0][0])
-        connection.close()
+        try:
+            rows = int(
+                connection.sql(
+                    f"select count(*) from read_parquet('{path.as_posix()}')"
+                ).fetchall()[0][0]
+            )
+        finally:
+            connection.close()
         columns: list[str] = []
         width = spec.minimum_columns
     elif header:
@@ -131,7 +128,13 @@ def measure_source(raw: Path, spec: SourceSpec) -> int:
         failures.append(f"{relative} is missing " + ", ".join(missing))
     if rows < spec.minimum_rows:
         failures.append(f"{relative} has {rows} rows, needs {spec.minimum_rows}")
-    if failures:
+    return relative, rows, failures
+
+
+def measure_source(raw: Path, spec: SourceSpec) -> int:
+    """Row count for one landed file. Raises when the file breaks its contract."""
+    _relative, rows, failures = _check_source(raw, spec)
+    if failures or rows is None:
         raise ValidationError(failures)
     return rows
 
@@ -143,31 +146,10 @@ def validate_raw(raw: Path, waived: set[str] | None = None) -> dict[str, int]:
     for spec in SPECS:
         if spec.key in waived:
             continue
-        relative, header = _product(spec)
-        path = raw / relative
-        if not path.exists():
-            failures.append(f"{relative} is missing")
-            continue
-        if path.suffix == ".parquet":
-            connection = duckdb.connect()
-            rows = int(connection.sql(f"select count(*) from read_parquet('{path.as_posix()}')").fetchall()[0][0])
-            connection.close()
-            columns: list[str] = []
-            width = spec.minimum_columns
-        elif header:
-            rows, columns = _csv_rows(path)
-            width = len(columns)
-        else:
-            rows, width = _ods_shape(path)
-            columns = []
-        counts[relative] = rows
-        if not header and path.suffix != ".parquet" and width < spec.minimum_columns:
-            failures.append(f"{relative} has {width} columns, needs {spec.minimum_columns}")
-        missing = [name for name in spec.required_columns if name not in columns]
-        if missing:
-            failures.append(f"{relative} is missing " + ", ".join(missing))
-        if rows < spec.minimum_rows:
-            failures.append(f"{relative} has {rows} rows, needs {spec.minimum_rows}")
+        relative, rows, source_failures = _check_source(raw, spec)
+        if rows is not None:
+            counts[relative] = rows
+        failures.extend(source_failures)
     if failures:
         raise ValidationError(failures)
     return counts

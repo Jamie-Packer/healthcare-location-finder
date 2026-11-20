@@ -185,3 +185,33 @@ def test_unchanged_cqc_and_postcode_files_skip_download():
     nspl = RemoteFile(key=NSPL_KEY, url="https://example.invalid/data", edition="NSPL_AUG_2026", modified="10")
     assert identity_unchanged(nspl, {"url": nspl.url, "edition": "NSPL_AUG_2026", "modified": "10"})
     assert not identity_unchanged(nspl, {"url": nspl.url, "edition": "NSPL_MAY_2026", "modified": "10"})
+
+
+def test_download_file_rejects_html_for_csv(tmp_path):
+    from ingest.download import download_file
+
+    class _HtmlResponse:
+        status_code = 200
+        headers = {"Content-Type": "text/html; charset=utf-8"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size=1024):
+            yield b"<html><body>Error</body></html>"
+
+    class _Session:
+        def get(self, url, stream=True, timeout=None):
+            return _HtmlResponse()
+
+    dest = tmp_path / "ods.csv"
+    with pytest.raises(RuntimeError, match="returned HTML"):
+        download_file(_Session(), "https://example.invalid/ods.csv", dest, minimum=1, refresh=True)
+    assert not dest.exists()
+
