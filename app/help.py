@@ -4,7 +4,14 @@ from pathlib import Path
 
 import streamlit as st
 
-from data import SAMPLE_WARNING, attribution_markdown, attribution_year, currency_markdown, ensure_data
+from data import (
+    SAMPLE_WARNING,
+    STALE_CACHE_WARNING,
+    attribution_markdown,
+    attribution_year,
+    currency_markdown,
+    ensure_data,
+)
 
 
 def _relationship_diagram() -> None:
@@ -21,6 +28,8 @@ except FileNotFoundError as exc:
 st.title("Full guide")
 if paths.source == "sample":
     st.warning(SAMPLE_WARNING)
+elif paths.source == "stale_cache":
+    st.warning(STALE_CACHE_WARNING)
 if st.button("Back to search", icon=":material/arrow_back:"):
     st.switch_page("search.py")
 
