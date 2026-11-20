@@ -126,18 +126,23 @@ def apply_download(
     return item
 
 
-def prepare_cqc(refresh: bool) -> None:
+def prepare_cqc_file(key: str, refresh: bool) -> None:
     outputs = {
-        RAW / CQC_ACTIVE: (RAW / "cqc" / "locations.csv", ACTIVE_COLUMNS),
-        RAW / CQC_DEACTIVATED: (RAW / "cqc" / "deactivated_locations.csv", DEACTIVATED_COLUMNS),
+        CQC_ACTIVE: (RAW / CQC_ACTIVE, RAW / "cqc" / "locations.csv", ACTIVE_COLUMNS),
+        CQC_DEACTIVATED: (RAW / CQC_DEACTIVATED, RAW / "cqc" / "deactivated_locations.csv", DEACTIVATED_COLUMNS),
     }
-    for source, (dest, columns) in outputs.items():
-        if dest.exists() and dest.stat().st_size > 0 and not refresh:
-            print(f"skip {dest.relative_to(ROOT)}", flush=True)
-            continue
-        print(f"convert {source.name}", flush=True)
-        count = convert_locations(source, dest, columns)
-        print(f"wrote {dest.relative_to(ROOT)} ({count} rows)", flush=True)
+    source, dest, columns = outputs[key]
+    if dest.exists() and dest.stat().st_size > 0 and not refresh:
+        print(f"skip {dest.relative_to(ROOT)}", flush=True)
+        return
+    print(f"convert {source.name}", flush=True)
+    count = convert_locations(source, dest, columns)
+    print(f"wrote {dest.relative_to(ROOT)} ({count} rows)", flush=True)
+
+
+def prepare_cqc(refresh: bool) -> None:
+    for key in (CQC_ACTIVE, CQC_DEACTIVATED):
+        prepare_cqc_file(key, refresh)
 
 
 def _name_code(member: str) -> str | None:

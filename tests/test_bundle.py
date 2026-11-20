@@ -267,3 +267,50 @@ def test_duplicate_location_key_is_rejected(fixture_mart, tmp_path, monkeypatch)
     with pytest.raises(ValidationError) as caught:
         publish_bundle(broken, _manifest(), None)
     assert "duplicate" in str(caught.value)
+
+
+def test_parquet_missing_a_csv_row_is_rejected(fixture_mart, tmp_path, monkeypatch):
+    mart = _publish(fixture_mart, tmp_path, monkeypatch)
+    archive = mart / BUNDLE_ZIP
+    reduced = tmp_path / "reduced-mart"
+    shutil.copytree(mart, reduced)
+    location = (reduced / "location.parquet").as_posix()
+    dest = reduced / "location-next.parquet"
+    connection = duckdb.connect()
+    connection.execute(
+        f"""
+        copy (
+            select * from read_parquet('{location}') offset 1
+        ) to '{dest.as_posix()}' (format parquet)
+        """
+    )
+    connection.close()
+    dest.replace(reduced / "location.parquet")
+    with pytest.raises(ValidationError) as caught:
+        verify_zip(archive, reduced)
+    assert "location.csv does not match location.parquet" in str(caught.value)
+
+
+def test_parquet_with_duplicate_row_is_rejected(fixture_mart, tmp_path, monkeypatch):
+    mart = _publish(fixture_mart, tmp_path, monkeypatch)
+    archive = mart / BUNDLE_ZIP
+    duped = tmp_path / "duped-mart"
+    shutil.copytree(mart, duped)
+    location = (duped / "location.parquet").as_posix()
+    dest = duped / "location-next.parquet"
+    connection = duckdb.connect()
+    connection.execute(
+        f"""
+        copy (
+            select * from read_parquet('{location}')
+            union all
+            select * from (select * from read_parquet('{location}') limit 1)
+        ) to '{dest.as_posix()}' (format parquet)
+        """
+    )
+    connection.close()
+    dest.replace(duped / "location.parquet")
+    with pytest.raises(ValidationError) as caught:
+        verify_zip(archive, duped)
+    assert "location.csv does not match location.parquet" in str(caught.value)
+

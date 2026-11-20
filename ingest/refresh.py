@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import importlib.metadata
 import json
 import os
+import platform
 import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -23,7 +26,7 @@ from ingest.build import database_path, dbt_build
 from ingest.bundle import git_commit, publish_bundle, worktree_dirty
 from ingest.contract import SCHEMA_VERSION, contract_sha256
 from ingest.convert import OUTPUT_FIELDS
-from ingest.download import RAW, discover_spec, http_session, land_spec, prepare_cqc, prepare_nspl
+from ingest.download import RAW, discover_spec, http_session, land_spec, prepare_cqc_file, prepare_nspl
 from ingest.history import export_history, restore_history
 from ingest.registry import OGL, SPECS, SourceSpec, cache_members
 from ingest.sources import CQC_ACTIVE, CQC_DEACTIVATED, NSPL_KEY, RemoteFile, identity_unchanged
@@ -96,6 +99,48 @@ def _same_contract(previous: dict) -> bool:
     )
 
 
+def code_fingerprint() -> str:
+    """Hash of data-producing SQL, seeds and Python ingest modules."""
+    patterns = (
+        "dbt/models/**/*.sql",
+        "dbt/macros/**/*.sql",
+        "dbt/seeds/**/*.csv",
+        "dbt/snapshots/**/*.sql",
+        "ingest/*.py",
+    )
+    paths: list[Path] = []
+    for pattern in patterns:
+        paths.extend(ROOT.glob(pattern))
+    digest = hashlib.sha256()
+    for path in sorted({p for p in paths if p.is_file()}):
+        rel = path.relative_to(ROOT).as_posix()
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _build_env() -> dict[str, str]:
+    env = {"python": platform.python_version()}
+    for pkg in ("duckdb", "dbt-core", "dbt-duckdb", "pandas", "pyarrow"):
+        try:
+            env[pkg] = importlib.metadata.version(pkg)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return env
+
+
+def _can_skip_for_previous(previous: dict | None) -> bool:
+    if not previous:
+        return False
+    if not _same_contract(previous):
+        return False
+    if previous.get("build_status") != "normal":
+        return False
+    return previous.get("code_fingerprint") == code_fingerprint()
+
+
 def _build_id(built_at: str, commit: str | None) -> str:
     stamp = datetime.fromisoformat(built_at).strftime("%Y%m%dT%H%M%SZ")
     return f"{stamp}-{(commit or 'local')[:7]}"
@@ -134,12 +179,12 @@ def release_tag() -> str:
     return payload["tag"]
 
 
-def _asset_url(name: str) -> str:
-    return f"https://github.com/{repository()}/releases/download/{release_tag()}/{name}"
+def _asset_url(name: str, tag: str | None = None) -> str:
+    return f"https://github.com/{repository()}/releases/download/{tag or release_tag()}/{name}"
 
 
-def _download_asset(session: requests.Session, name: str, dest: Path) -> bool:
-    response = session.get(_asset_url(name), timeout=(30, 600), allow_redirects=True)
+def _download_asset(session: requests.Session, name: str, dest: Path, tag: str | None = None) -> bool:
+    response = session.get(_asset_url(name, tag), timeout=(30, 600), allow_redirects=True)
     if response.status_code == 404:
         dest.unlink(missing_ok=True)
         return False
@@ -152,12 +197,53 @@ def _download_asset(session: requests.Session, name: str, dest: Path) -> bool:
     return True
 
 
-def previous_manifest(session: requests.Session) -> dict | None:
-    dest = PREVIOUS / "manifest.json"
-    if not _download_asset(session, "manifest.json", dest):
-        print("no previous release", flush=True)
+def _latest_immutable_tag(session: requests.Session) -> str | None:
+    """Find the newest complete immutable data-<build_id> release when data-latest is absent."""
+    headers = {"Accept": "application/vnd.github+json"}
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = session.get(
+            f"https://api.github.com/repos/{repository()}/releases",
+            params={"per_page": 20},
+            headers=headers,
+            timeout=(15, 60),
+        )
+        if response.status_code >= 400:
+            return None
+        releases = response.json()
+    except (requests.RequestException, ValueError):
         return None
-    return json.loads(dest.read_text(encoding="utf-8"))
+    required_assets = {"manifest.json", "location.parquet", "location_history.parquet"}
+    mutable = release_tag()
+    candidates: list[str] = []
+    for rel in releases:
+        tag = str(rel.get("tag_name") or "")
+        if not tag.startswith("data-") or tag == mutable or rel.get("draft"):
+            continue
+        asset_names = {str(a.get("name") or "") for a in rel.get("assets") or []}
+        if required_assets <= asset_names:
+            candidates.append(tag)
+    return max(candidates) if candidates else None
+
+
+def resolve_previous(session: requests.Session) -> tuple[dict | None, str | None]:
+    dest = PREVIOUS / "manifest.json"
+    tag = release_tag()
+    if _download_asset(session, "manifest.json", dest, tag):
+        return json.loads(dest.read_text(encoding="utf-8")), tag
+    fallback_tag = _latest_immutable_tag(session)
+    if fallback_tag and _download_asset(session, "manifest.json", dest, fallback_tag):
+        print(f"resolved previous release from immutable tag {fallback_tag}", flush=True)
+        return json.loads(dest.read_text(encoding="utf-8")), fallback_tag
+    print("no previous release", flush=True)
+    return None, None
+
+
+def previous_manifest(session: requests.Session) -> dict | None:
+    manifest, _tag = resolve_previous(session)
+    return manifest
 
 
 def _previous_source(manifest: dict | None, key: str) -> dict | None:
@@ -219,10 +305,20 @@ def _restore_spec(bundle: Path, spec: SourceSpec) -> bool:
     return True
 
 
-def _write_cache(dest: Path) -> None:
+def _write_cache(dest: Path, included_keys: set[str] | None = None) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
+    allowed: set[str] | None = None
+    if included_keys is not None:
+        allowed = {
+            member
+            for spec in SPECS
+            if spec.key in included_keys
+            for member in spec.cache
+        }
     with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for relative in cache_members():
+            if allowed is not None and relative not in allowed:
+                continue
             path = RAW / relative
             if path.exists() and path.stat().st_size > 0:
                 archive.write(path, relative.replace("\\", "/"))
@@ -366,6 +462,7 @@ def _manifest(landed: list[Landed], raw_counts: dict, row_counts: dict, conflict
     return {
         "schema_version": SCHEMA_VERSION,
         "contract_sha256": contract_sha256(),
+        "code_fingerprint": code_fingerprint(),
         "build_id": _build_id(built_at, commit),
         "built_at": built_at,
         "commit": commit,
@@ -374,6 +471,7 @@ def _manifest(landed: list[Landed], raw_counts: dict, row_counts: dict, conflict
         "data_scope": "current",
         "build_status": build_status({item.status for item in landed}),
         "nspl_edition": nspl,
+        "build_env": _build_env(),
         "sources": [_source_record(item) for item in landed],
         "raw_counts": raw_counts,
         "row_counts": row_counts,
@@ -392,7 +490,12 @@ def _finish(action: str, reason: str, report: dict, degraded: bool = False, stal
     print(f"{action}: {reason}", flush=True)
 
 
-def _unchanged(session: requests.Session, previous: dict, force: bool) -> bool:
+def _unchanged(
+    session: requests.Session,
+    previous: dict,
+    force: bool,
+    prelanded: dict[str, RemoteFile] | None = None,
+) -> bool:
     """Skip the large files when every discovered source still matches."""
     if force:
         return False
@@ -414,30 +517,42 @@ def _unchanged(session: requests.Session, previous: dict, force: bool) -> bool:
             measure_source(RAW, spec)
         except Exception:
             return False
+        if prelanded is not None:
+            prelanded[spec.key] = remote
         if not _same(spec, remote, _previous_source(previous, spec.key)):
             return False
     return True
 
 
-def run(force: bool) -> None:
+def _land_and_prepare(session: requests.Session, spec: SourceSpec) -> RemoteFile:
+    remote = land_spec(session, spec, refresh=True)
+    if spec.kind == "cqc":
+        prepare_cqc_file(spec.key, refresh=True)
+    elif spec.kind == "nspl":
+        prepare_nspl(refresh=True)
+    return remote
+
+
+def run(force: bool, reset_history: bool = False) -> None:
     session = http_session()
-    previous = previous_manifest(session)
+    previous, prev_tag = resolve_previous(session)
     cache = PREVIOUS / CACHE_NAME
-    _download_asset(session, CACHE_NAME, cache)
-    if previous and _same_contract(previous) and _unchanged(session, previous, force):
+    if prev_tag:
+        _download_asset(session, CACHE_NAME, cache, prev_tag)
+    prelanded: dict[str, RemoteFile] = {}
+    if _can_skip_for_previous(previous) and _unchanged(session, previous, force, prelanded):
         _finish("skip", "sources unchanged", {"ok": True, "action": "skip", "reason": "sources unchanged"})
         return
 
     fetched: list[tuple[SourceSpec, RemoteFile | None, str | None]] = []
     for spec in SPECS:
+        if spec.key in prelanded:
+            fetched.append((spec, prelanded[spec.key], None))
+            continue
         try:
-            fetched.append((spec, land_spec(session, spec, refresh=True), None))
+            fetched.append((spec, _land_and_prepare(session, spec), None))
         except Exception as exc:
             fetched.append((spec, None, str(exc)))
-    if all(remote is not None for spec, remote, _error in fetched if spec.kind == "cqc"):
-        prepare_cqc(refresh=True)
-    if all(remote is not None for spec, remote, _error in fetched if spec.kind == "nspl"):
-        prepare_nspl(refresh=True)
     landed: list[Landed] = []
     for spec, remote, error in fetched:
         if error is not None or remote is None:
@@ -460,11 +575,16 @@ def run(force: bool) -> None:
         raise SystemExit(1) from exc
 
     history = PREVIOUS / "location_history.parquet"
-    _download_asset(session, "location_history.parquet", history)
+    if prev_tag:
+        _download_asset(session, "location_history.parquet", history, prev_tag)
     database = database_path(fixtures=False)
     for path in (database, Path(str(database) + ".wal")):
         path.unlink(missing_ok=True)
-    restore_history(database, history)
+    restored = restore_history(database, history)
+    if previous is not None and not restored and not reset_history:
+        failures = ["previous location history could not be restored; pass --reset-history to start fresh"]
+        _finish("fail", "history continuity failed", {"ok": False, "failures": failures})
+        raise SystemExit(1)
     try:
         dbt_build(fixtures=False)
     except SystemExit as exc:
@@ -482,13 +602,14 @@ def run(force: bool) -> None:
     except ValidationError as exc:
         _finish("fail", "mart checks failed", {"ok": False, "failures": exc.failures})
         raise SystemExit(1) from exc
-    for name in (
-        "location.parquet",
-        "search_entity.parquet",
-        "entity_site.parquet",
-        "entity_identifier.parquet",
-    ):
-        _download_asset(session, name, PREVIOUS / name)
+    if prev_tag:
+        for name in (
+            "location.parquet",
+            "search_entity.parquet",
+            "entity_site.parquet",
+            "entity_identifier.parquet",
+        ):
+            _download_asset(session, name, PREVIOUS / name, prev_tag)
     manifest = _manifest(landed, raw_counts, row_counts, _conflict_count(database))
     try:
         manifest = publish_bundle(
@@ -500,7 +621,7 @@ def run(force: bool) -> None:
         _finish("fail", "bundle checks failed", {"ok": False, "failures": exc.failures})
         raise SystemExit(1) from exc
     NOTES.write_text(_notes(manifest, landed) + "\n", encoding="utf-8")
-    _write_cache(MART / CACHE_NAME)
+    _write_cache(MART / CACHE_NAME, {item.spec.key for item in landed if item.status != "missing"})
     stale = [item.spec.key for item in landed if item.status != "ok"]
     _finish(
         "publish",
@@ -518,9 +639,17 @@ def main() -> None:
         action="store_true",
         help="Rebuild even when sources are unchanged, and allow a large row-count change",
     )
+    parser.add_argument(
+        "--reset-history",
+        action="store_true",
+        help="Allow rebuilding without restoring the previous snapshot history",
+    )
     args = parser.parse_args()
     try:
-        run(force=args.force or _enabled("FORCE_REFRESH"))
+        run(
+            force=args.force or _enabled("FORCE_REFRESH"),
+            reset_history=args.reset_history or _enabled("RESET_HISTORY"),
+        )
     except ValidationError as exc:
         _finish("fail", "checks failed", {"ok": False, "failures": exc.failures})
         raise SystemExit(1) from exc

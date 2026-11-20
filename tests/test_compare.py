@@ -212,3 +212,42 @@ def test_a_rekeyed_rename_stays_a_rename(tmp_path):
     assert renamed["previous_value"] == "Old Ward"
     assert renamed["current_value"] == "New Ward"
     assert renamed["record_id"] == "new-id"
+
+
+def test_reassigned_identifier_between_surviving_sites_is_not_a_transition(tmp_path):
+    previous = tmp_path / "previous"
+    current = tmp_path / "current"
+    previous.mkdir()
+    current.mkdir()
+    connection = duckdb.connect()
+    for directory, moved_to in ((previous, "site-a"), (current, "site-b")):
+        connection.execute(
+            f"""
+            copy (
+                select * from (values
+                    ('site-a', 'Site Alpha', 'RXX', null, 'CQC', '1-101'),
+                    ('site-b', 'Site Beta', 'RXX', null, 'CQC', '1-102')
+                ) as t(location_id, name, parent_code, nhs_code, regulator, regulator_id)
+            ) to '{(directory / "location.parquet").as_posix()}' (format parquet)
+            """
+        )
+        connection.execute(
+            f"""
+            copy (
+                select * from (values
+                    ('site:site-a', 'cqc_location', '1-101', 'primary', 'cqc'),
+                    ('site:site-b', 'cqc_location', '1-102', 'primary', 'cqc'),
+                    ('site:{moved_to}', 'ods', 'MOV1', 'additional', 'ods')
+                ) as t(entity_id, identifier_system, identifier_value, identifier_role, source)
+            ) to '{(directory / "entity_identifier.parquet").as_posix()}' (format parquet)
+            """
+        )
+        _entities(directory / "search_entity.parquet", [("site:site-a", "Site Alpha"), ("site:site-b", "Site Beta")])
+        _links(directory / "entity_site.parquet", [("site:site-a", "site-a"), ("site:site-b", "site-b")])
+    connection.close()
+
+    summary = write_comparison(current, previous, tmp_path / "diff")
+    assert summary["identity"]["transitions"] == 0
+    assert summary["identity"]["unresolved"] == 2
+    assert summary["changes"] == []
+

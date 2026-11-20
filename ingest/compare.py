@@ -67,12 +67,16 @@ def _previous_build(previous: Path) -> str | None:
     return payload.get("build_id") or payload.get("built_at")
 
 
+def _sql_path(path: Path) -> str:
+    return path.as_posix().replace("'", "''")
+
+
 def _identifier_sql(directory: Path, legacy: bool) -> str:
     identifier = directory / "entity_identifier.parquet"
     if identifier.exists():
         template = _PROJECTED if legacy else _NATIVE
-        return template.format(path=identifier.as_posix())
-    return _LEGACY.format(path=(directory / "location.parquet").as_posix())
+        return template.format(path=_sql_path(identifier))
+    return _LEGACY.format(path=_sql_path(directory / "location.parquet"))
 
 
 def write_comparison(current: Path, previous: Path | None, dest: Path) -> dict:
@@ -94,12 +98,12 @@ def write_comparison(current: Path, previous: Path | None, dest: Path) -> dict:
     legacy = not (previous / "entity_identifier.parquet").exists()
     current_ids = _identifier_sql(current, legacy)
     previous_ids = _identifier_sql(previous, False)
-    current_location = (current / "location.parquet").as_posix()
-    previous_location = (previous / "location.parquet").as_posix()
-    current_entity = (current / "search_entity.parquet").as_posix()
-    previous_entity = (previous / "search_entity.parquet").as_posix()
-    current_link = (current / "entity_site.parquet").as_posix()
-    previous_link = (previous / "entity_site.parquet").as_posix()
+    current_location = _sql_path(current / "location.parquet")
+    previous_location = _sql_path(previous / "location.parquet")
+    current_entity = _sql_path(current / "search_entity.parquet")
+    previous_entity = _sql_path(previous / "search_entity.parquet")
+    current_link = _sql_path(current / "entity_site.parquet")
+    previous_link = _sql_path(previous / "entity_site.parquet")
     connection = duckdb.connect()
     try:
         connection.execute(
@@ -119,6 +123,18 @@ def write_comparison(current: Path, previous: Path | None, dest: Path) -> dict:
             """
         )
         connection.execute(
+            f"""
+            create temporary table current_site_keys as
+            select distinct location_id from read_parquet('{current_location}')
+            """
+        )
+        connection.execute(
+            f"""
+            create temporary table previous_site_keys as
+            select distinct location_id from read_parquet('{previous_location}')
+            """
+        )
+        connection.execute(
             """
             create temporary table identity_changes as
             with counts as (
@@ -134,10 +150,34 @@ def write_comparison(current: Path, previous: Path | None, dest: Path) -> dict:
                 ) as sides
                 group by 1, 2
             ),
+            moved_one_to_one as (
+                select
+                    previous_ids.identifier_system,
+                    previous_ids.identifier_value,
+                    previous_ids.location_id as previous_location_id,
+                    current_ids.location_id as current_location_id,
+                    (previous_ids.location_id not in (select location_id from current_site_keys))
+                        and (current_ids.location_id not in (select location_id from previous_site_keys))
+                        as lifecycle_compatible
+                from previous_ids
+                inner join current_ids
+                    on current_ids.identifier_system = previous_ids.identifier_system
+                    and current_ids.identifier_value = previous_ids.identifier_value
+                inner join counts
+                    on counts.identifier_system = previous_ids.identifier_system
+                    and counts.identifier_value = previous_ids.identifier_value
+                where counts.previous_count = 1
+                    and counts.current_count = 1
+                    and previous_ids.location_id <> current_ids.location_id
+            ),
             ambiguous as (
                 select identifier_system, identifier_value
                 from counts
                 where previous_count > 1 or current_count > 1
+                union
+                select identifier_system, identifier_value
+                from moved_one_to_one
+                where not lifecycle_compatible
             )
             select
                 'unresolved' as change,
@@ -156,20 +196,12 @@ def write_comparison(current: Path, previous: Path | None, dest: Path) -> dict:
             union all
             select
                 'transition',
-                previous_ids.identifier_system,
-                previous_ids.identifier_value,
-                previous_ids.location_id,
-                current_ids.location_id
-            from previous_ids
-            inner join current_ids
-                on current_ids.identifier_system = previous_ids.identifier_system
-                and current_ids.identifier_value = previous_ids.identifier_value
-            inner join counts
-                on counts.identifier_system = previous_ids.identifier_system
-                and counts.identifier_value = previous_ids.identifier_value
-            where counts.previous_count = 1
-                and counts.current_count = 1
-                and previous_ids.location_id <> current_ids.location_id
+                identifier_system,
+                identifier_value,
+                previous_location_id,
+                current_location_id
+            from moved_one_to_one
+            where lifecycle_compatible
             """
         )
         connection.execute(
@@ -178,7 +210,7 @@ def write_comparison(current: Path, previous: Path | None, dest: Path) -> dict:
                 select change, identifier_system, identifier_value, previous_location_id, location_id
                 from identity_changes
                 order by change, identifier_system, identifier_value, previous_location_id, location_id
-            ) to '{identity_path.as_posix()}' (format csv, header true, quote '"', escape '"', null '')
+            ) to '{_sql_path(identity_path)}' (format csv, header true, quote '"', escape '"', null '')
             """
         )
         connection.execute(
@@ -334,7 +366,7 @@ def write_comparison(current: Path, previous: Path | None, dest: Path) -> dict:
                 select record_type, change, record_id, previous_value, current_value
                 from entity_changes
                 order by record_type, change, record_id
-            ) to '{entity_path.as_posix()}' (format csv, header true, quote '"', escape '"', null '')
+            ) to '{_sql_path(entity_path)}' (format csv, header true, quote '"', escape '"', null '')
             """
         )
         identity_counts = dict(

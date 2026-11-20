@@ -36,11 +36,11 @@ class SourceSpec:
 OGL = "Open Government Licence"
 
 ENGLAND_ODS = (
-    ("ods/etr.csv", "etr", 1_000, 100, 12),
-    ("ods/ets.csv", "ets", 10_000, 1_000, 15),
-    ("ods/ephp.csv", "ephp", 1_000, 100, 12),
-    ("ods/ephpsite.csv", "ephpsite", 10_000, 500, 15),
-    ("ods/eother.csv", "eother", 1_000, 40, 12),
+    ("ods/etr.csv", "etr", 1_000, 100, 12, True),
+    ("ods/ets.csv", "ets", 10_000, 1_000, 15, True),
+    ("ods/ephp.csv", "ephp", 1_000, 100, 12, True),
+    ("ods/ephpsite.csv", "ephpsite", 10_000, 500, 15, True),
+    ("ods/eother.csv", "eother", 1_000, 40, 12, False),
 )
 
 
@@ -62,8 +62,8 @@ def _ods(key: str, report: str, minimum_bytes: int, minimum_rows: int, minimum_c
 
 SPECS: tuple[SourceSpec, ...] = (
     *(
-        _ods(key, report, size, rows, columns, "England", True)
-        for key, report, size, rows, columns in ENGLAND_ODS
+        _ods(key, report, size, rows, columns, "England", required)
+        for key, report, size, rows, columns, required in ENGLAND_ODS
     ),
     SourceSpec(
         key=CQC_ACTIVE,
@@ -81,7 +81,7 @@ SPECS: tuple[SourceSpec, ...] = (
         key=CQC_DEACTIVATED,
         nation="England",
         publisher="Care Quality Commission",
-        required=True,
+        required=False,
         minimum_bytes=1_000_000,
         minimum_rows=5_000,
         kind="cqc",
@@ -109,8 +109,8 @@ SPECS: tuple[SourceSpec, ...] = (
         header=False,
     ),
     _ods("ods/wlhb.csv", "wlhb", 200, 5, 10, "Wales", False),
-    _ods("ods/wlhbsite.csv", "wlhbsite", 20_000, 500, 10, "Wales", False),
-    _ods("ods/epraccur.csv", "epraccur", 200_000, 8_000, 20, "Wales", False),
+    _ods("ods/wlhbsite.csv", "wlhbsite", 20_000, 500, 12, "Wales", False),
+    _ods("ods/epraccur.csv", "epraccur", 200_000, 8_000, 26, "Wales", False),
     _ods("ods/niorg.csv", "niorg", 400, 10, 10, "Northern Ireland", False),
     _ods("ods/npraccur.csv", "npraccur", 5_000, 200, 12, "Northern Ireland", False),
     SourceSpec(
@@ -195,10 +195,6 @@ SPECS: tuple[SourceSpec, ...] = (
         required_columns=("service_id", "name", "postcode", "category"),
     ),
 )
-
-
-def by_key() -> dict[str, SourceSpec]:
-    return {spec.key: spec for spec in SPECS}
 
 
 def cache_members() -> tuple[str, ...]:

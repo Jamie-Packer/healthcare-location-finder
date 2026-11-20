@@ -55,6 +55,10 @@ def _quote(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+def _sql_path(path: Path) -> str:
+    return path.as_posix().replace("'", "''")
+
+
 def _connect() -> duckdb.DuckDBPyConnection:
     return duckdb.connect()
 
@@ -62,7 +66,7 @@ def _connect() -> duckdb.DuckDBPyConnection:
 def _csv_relation(path: Path) -> str:
     return f"""
         read_csv(
-            '{path.as_posix()}',
+            '{_sql_path(path)}',
             header = true,
             all_varchar = true,
             quote = '"',
@@ -85,7 +89,7 @@ def _reject_empty_text(connection: duckdb.DuckDBPyConnection, table: Table, parq
     if not checks:
         return
     found = connection.execute(
-        f"select {', '.join(checks)} from read_parquet('{parquet.as_posix()}')"
+        f"select {', '.join(checks)} from read_parquet('{_sql_path(parquet)}')"
     ).fetchone()
     failures = [
         f"{table.filename} column {column.name} contains an empty string"
@@ -109,9 +113,9 @@ def _export_csv(connection: duckdb.DuckDBPyConnection, table: Table, parquet: Pa
         f"""
         copy (
             select {columns}
-            from read_parquet('{parquet.as_posix()}')
+            from read_parquet('{_sql_path(parquet)}')
             order by {order}
-        ) to '{dest.as_posix()}' (
+        ) to '{_sql_path(dest)}' (
             format csv,
             header true,
             quote '"',
@@ -170,7 +174,7 @@ def _output_record(table: Table, path: Path, rows: int, nulls: dict[str, int]) -
 
 def _profile(connection: duckdb.DuckDBPyConnection, table: Table, path: Path, kind: str) -> tuple[int, dict[str, int]]:
     if kind == "parquet":
-        source = f"read_parquet('{path.as_posix()}')"
+        source = f"read_parquet('{_sql_path(path)}')"
     else:
         source = _csv_relation(path)
     counts = ", ".join(
@@ -415,6 +419,12 @@ def verify_zip(zip_path: Path, parquet_dir: Path | None = None) -> dict:
                 failures.append(f"{name} checksum does not match the manifest")
             if item.get("bytes") != path.stat().st_size:
                 failures.append(f"{name} size does not match the manifest")
+        recorded_contract = manifest.get("contract_sha256")
+        if recorded_contract is not None and recorded_contract != contract_sha256():
+            failures.append("manifest contract_sha256 does not match this contract")
+        recorded_fingerprint = manifest.get("data_fingerprint")
+        if recorded_fingerprint is not None and recorded_fingerprint != _data_fingerprint(manifest.get("outputs") or []):
+            failures.append("manifest data_fingerprint does not match output checksums")
         connection = _connect()
         try:
             loaded: dict[str, str] = {}
@@ -429,7 +439,7 @@ def verify_zip(zip_path: Path, parquet_dir: Path | None = None) -> dict:
                     continue
                 rows = int(connection.execute(f"select count(*) from {source}").fetchone()[0])
                 recorded = (outputs.get(table.filename) or {}).get("rows")
-                if recorded is not None and int(recorded) != rows:
+                if recorded is None or int(recorded) != rows:
                     failures.append(f"{table.filename} row count does not match the manifest")
                 _fail_keys(connection, table, source, failures)
                 _fail_types(connection, table, source, failures)
@@ -510,16 +520,21 @@ def _agree_with_parquet(
             for column in table.columns
         )
         csv_source = loaded[table.name]
+        parquet_path = _sql_path(parquet)
         difference = connection.execute(
             f"""
             select count(*) from (
-                select {projected} from {csv_source}
-                except
-                select {projected} from read_parquet('{parquet.as_posix()}')
+                (
+                    select {projected} from {csv_source}
+                    except all
+                    select {projected} from read_parquet('{parquet_path}')
+                )
                 union all
-                select {projected} from read_parquet('{parquet.as_posix()}')
-                except
-                select {projected} from {csv_source}
+                (
+                    select {projected} from read_parquet('{parquet_path}')
+                    except all
+                    select {projected} from {csv_source}
+                )
             )
             """
         ).fetchone()[0]

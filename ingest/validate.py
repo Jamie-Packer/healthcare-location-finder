@@ -49,10 +49,14 @@ def _product(spec: SourceSpec) -> tuple[str, bool]:
     return spec.key, spec.header
 
 
+def _sql_path(path: Path) -> str:
+    return path.as_posix().replace("'", "''")
+
+
 def _ods_shape(path: Path) -> tuple[int, int]:
     query = f"""
         from read_csv(
-            '{path.as_posix()}',
+            '{_sql_path(path)}',
             header = false,
             all_varchar = true,
             quote = '"',
@@ -76,7 +80,7 @@ def _ods_shape(path: Path) -> tuple[int, int]:
 def _csv_rows(path: Path) -> tuple[int, list[str]]:
     query = f"""
         from read_csv(
-            '{path.as_posix()}',
+            '{_sql_path(path)}',
             header = true,
             all_varchar = true,
             quote = '"',
