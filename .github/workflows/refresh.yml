@@ -14,27 +14,37 @@ on:
         description: Rebuild and publish even if sources match or the row count moves outside the usual band
         type: boolean
         default: false
+      reset_history:
+        description: Allow rebuilding without restoring the previous snapshot history
+        type: boolean
+        default: false
 
 concurrency:
   group: data-refresh
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  issues: write
+permissions: {}
 
 jobs:
-  refresh:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      action: ${{ steps.refresh.outputs.action }}
+      degraded: ${{ steps.refresh.outputs.degraded }}
+      stale: ${{ steps.refresh.outputs.stale }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version-file: ".python-version"
           cache: pip
-          cache-dependency-path: requirements-build.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
 
       - name: Install build tools
         run: python -m pip install -r requirements-build.txt
@@ -43,6 +53,8 @@ jobs:
         id: refresh
         env:
           FORCE_REFRESH: ${{ inputs.force && 'true' || 'false' }}
+          RESET_HISTORY: ${{ inputs.reset_history && 'true' || 'false' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python -m ingest.refresh
@@ -58,15 +70,62 @@ jobs:
           echo "degraded=$(cat data/build/degraded.txt)" >> "$GITHUB_OUTPUT"
           echo "stale=$(cat data/build/stale.txt)" >> "$GITHUB_OUTPUT"
 
-      - name: Publish release
+      - name: Upload the validation report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-report
+          path: data/build/validation-report.json
+          if-no-files-found: ignore
+
+      - name: Upload verified release assets
         if: steps.refresh.outputs.action == 'publish'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-bundle
+          retention-days: 1
+          path: |
+            release.json
+            data/build/release-notes.txt
+            data/build/build_id.txt
+            data/mart/location.parquet
+            data/mart/search_entity.parquet
+            data/mart/entity_site.parquet
+            data/mart/entity_alias.parquet
+            data/mart/entity_identifier.parquet
+            data/mart/location_history.parquet
+            data/mart/manifest.json
+            data/mart/source-cache.zip
+            data/mart/location-reference-bundle.zip
+            data/mart/location-reference-bundle.zip.sha256
+
+  publish:
+    needs: build
+    if: needs.build.outputs.action == 'publish' || needs.build.outputs.action == 'skip'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout release metadata
+        if: needs.build.outputs.action == 'skip'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download verified release assets
+        if: needs.build.outputs.action == 'publish'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-bundle
+
+      - name: Publish immutable release then update latest
+        if: needs.build.outputs.action == 'publish'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=$(python -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
-          notes=$(python -c 'from pathlib import Path; print(Path("data/build/release-notes.txt").read_text(encoding="utf-8").strip())')
-          build_id=$(python -c 'from pathlib import Path; print(Path("data/build/build_id.txt").read_text(encoding="utf-8").strip())')
+          tag=$(python3 -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
+          notes=$(python3 -c 'from pathlib import Path; print(Path("data/build/release-notes.txt").read_text(encoding="utf-8").strip())')
+          build_id=$(python3 -c 'from pathlib import Path; print(Path("data/build/build_id.txt").read_text(encoding="utf-8").strip())')
           immutable="data-${build_id}"
           assets=(
             data/mart/location.parquet
@@ -80,43 +139,73 @@ jobs:
             data/mart/location-reference-bundle.zip
             data/mart/location-reference-bundle.zip.sha256
           )
+          # 1. Stage the immutable release as a draft, upload and verify all assets, then publish it.
+          is_draft=""
+          if gh release view "$immutable" >/dev/null 2>&1; then
+            is_draft=$(gh release view "$immutable" --json isDraft --jq '.isDraft')
+          fi
+          if [ -z "$is_draft" ]; then
+            gh release create "$immutable" --draft --title "Location reference ${build_id}" --notes "$notes"
+            gh release upload "$immutable" "${assets[@]}" --clobber
+          elif [ "$is_draft" = "true" ]; then
+            gh release edit "$immutable" --title "Location reference ${build_id}" --notes "$notes"
+            gh release upload "$immutable" "${assets[@]}" --clobber
+          else
+            echo "Published release ${immutable} already exists and is left unchanged."
+          fi
+          if [ "$is_draft" != "false" ]; then
+            asset_json=$(gh release view "$immutable" --json assets)
+            ASSET_JSON="$asset_json" python3 - "${assets[@]}" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          expected = {Path(p).name: Path(p).stat().st_size for p in sys.argv[1:]}
+          uploaded = {item["name"]: item["size"] for item in json.loads(os.environ["ASSET_JSON"])["assets"]}
+          missing = [name for name, size in expected.items() if uploaded.get(name) != size]
+          if missing:
+              raise SystemExit(f"Draft release asset verification failed for: {', '.join(missing)}")
+          PY
+            gh release edit "$immutable" --draft=false
+          fi
+          # 2. Update the mutable latest tag only after the immutable release is verified and published.
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --title "Location data" --notes "$notes"
           else
             gh release edit "$tag" --notes "$notes"
           fi
           gh release upload "$tag" "${assets[@]}" --clobber
-          if gh release view "$immutable" >/dev/null 2>&1; then
-            echo "Release ${immutable} already exists and is left unchanged."
-          else
-            gh release create "$immutable" --title "Location reference ${build_id}" --notes "$notes"
-            gh release upload "$immutable" "${assets[@]}"
-          fi
 
       - name: Record an unchanged check
-        if: steps.refresh.outputs.action == 'skip'
+        if: needs.build.outputs.action == 'skip'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=$(python -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
-          gh release edit "$tag" --notes "Checked $(date -u +%Y-%m-%dT%H:%M:%SZ). Sources unchanged. The previous location files stay published."
+          tag=$(python3 -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes "Checked $(date -u +%Y-%m-%dT%H:%M:%SZ). Sources unchanged. The previous location files stay published."
+          fi
 
-      - name: Open or update the failure issue
-        if: failure() || steps.refresh.outputs.degraded == 'true'
-        uses: actions/github-script@v7
+  report:
+    needs: [build, publish]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    steps:
+      - name: Update failure issue status
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
-            const degraded = "${{ steps.refresh.outputs.degraded }}" === "true";
-            const stale = "${{ steps.refresh.outputs.stale }}";
+            const buildResult = "${{ needs.build.result }}";
+            const publishResult = "${{ needs.publish.result }}";
+            const degraded = "${{ needs.build.outputs.degraded }}" === "true";
+            const stale = "${{ needs.build.outputs.stale }}";
             const title = "Data refresh failed";
-            const body = [
-              degraded
-                ? "New location files were published, but some sources used their last good copy: " + stale + "."
-                : "The location refresh did not publish new data. The previous release is unchanged.",
-              "",
-              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-            ].join("\n");
+            const failedBuild = buildResult !== "success";
+            const failedPublish = publishResult === "failure";
+            const shouldAlert = failedBuild || failedPublish || degraded;
+
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -124,58 +213,50 @@ jobs:
               per_page: 100,
             });
             const existing = issues.find((issue) => issue.title === title);
-            if (existing) {
+
+            if (shouldAlert) {
+              let summary;
+              if (failedBuild) {
+                summary = "The location refresh failed before publication. The previous release is unchanged.";
+              } else if (failedPublish) {
+                summary = "The location refresh passed validation, but release publication failed partway through. Inspect the latest release assets before promoting.";
+              } else {
+                summary = "New location files were published, but some sources used their last good copy: " + stale + ".";
+              }
+              const body = [
+                summary,
+                "",
+                `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              ].join("\n");
+              if (existing) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existing.number,
+                  body,
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body,
+                });
+              }
+              if (degraded && !failedBuild && !failedPublish) {
+                core.setFailed("Published with stale sources: " + stale);
+              }
+            } else if (existing) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: existing.number,
-                body,
+                body: "A later refresh finished without error. Closing.",
               });
-            } else {
-              await github.rest.issues.create({
+              await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title,
-                body,
+                issue_number: existing.number,
+                state: "closed",
               });
             }
-            if (degraded) {
-              core.setFailed("Published with stale sources: " + stale);
-            }
-
-      - name: Close the failure issue after a good run
-        if: success()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const title = "Data refresh failed";
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: "open",
-              per_page: 100,
-            });
-            const existing = issues.find((issue) => issue.title === title);
-            if (!existing) {
-              return;
-            }
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: existing.number,
-              body: "A later refresh finished without error. Closing.",
-            });
-            await github.rest.issues.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: existing.number,
-              state: "closed",
-            });
-
-      - name: Upload the validation report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: validation-report
-          path: data/build/validation-report.json
-          if-no-files-found: ignore
