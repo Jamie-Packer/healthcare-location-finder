@@ -116,11 +116,32 @@ raw as (
     union all
 
     select
+        'provider:' || sites.alt_parent_code,
+        sites.alt_parent_name,
+        'alternative',
+        false,
+        'cqc',
+        sites.alt_parent_code
+    from sites
+    inner join providers
+        on providers.provider_code = sites.alt_parent_code
+    where sites.alt_parent_name is not null
+        and sites.alt_parent_name <> providers.provider_name
+    group by sites.alt_parent_code, sites.alt_parent_name
+
+    union all
+
+    select
         entity_id,
         name,
         'preferred',
         true,
-        case when entity_type = 'postcode' then 'site_record' else 'ons' end,
+        case
+            when entity_type = 'postcode' then 'site_record'
+            when entity_type = 'hsc_trust' then 'ni_hsc_trust_seed'
+            when entity_type = 'health_board' and code_system = 'phs_health_board' then 'phs'
+            else 'ons'
+        end,
         code
     from {{ ref('search_entity') }}
     where entity_type not in ('site', 'provider')

@@ -9,3 +9,5 @@ cqc_location_id,name,ods_code,postcode,town,brand_name,provider_id,provider_name
 1-107,Example Regulator Ward,RX9,TN24 0LZ,Ashford,Ward Brand,RXX,East Example NHS Foundation Trust,N,NHS Healthcare,Clinic,South East,Ashford,2016-01-01,N,Example Road,
 1-108,Example Punctuation Clinic,,TN24 0LZ,Ashford,***,1-204,Example Punctuation Provider,N,Adult social care,Clinic,South East,Ashford,2017-01-01,N,Example Lane,
 Location ID,Location Name,Location ODS Code,TN24 0LZ,Ashford,,1-200,East Example NHS Foundation Trust,N,NHS Healthcare,Clinic,South East,Ashford,2017-01-01,N,Example Lane,
+RX3,Example ID Match Hospital,,TN24 0LZ,Ashford,,RXX,East Example NHS Foundation Trust,N,NHS Healthcare,Acute hospital,South East,Ashford,2016-04-01,N,Example Road,
+RX4,Example Split Operator Hospital,,TN24 0LZ,Ashford,,1-201,Example Care Ltd,N,Independent Healthcare,Clinic,South East,Ashford,2016-04-01,N,Example Road,

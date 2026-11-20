@@ -113,12 +113,12 @@ published reference bundle. This search lists places that have at least one curr
 
 **Why a site can appear twice**
 
-In England, a Care Quality Commission location is joined to an NHS site only when
-its organisation code matches exactly one open site. If that code is blank, both
-rows stay. Some NHS hospitals keep their organisation code in the regulator id
-and leave the organisation code blank, so they appear twice. Wales, Scotland and
-Northern Ireland are not merged across sources, so two sources can list the same
-place.
+In England, a Care Quality Commission location is joined to an NHS site when
+its organisation code matches exactly one open site, or when its regulator id
+matches an open NHS site code under the same parent organisation. If the codes
+do not match or the parent organisations differ, both rows stay. Wales, Scotland
+and Northern Ireland are not merged across sources, so two sources can list the
+same place.
 """
 )
 

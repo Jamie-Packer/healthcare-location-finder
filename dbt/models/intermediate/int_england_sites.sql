@@ -43,6 +43,13 @@ code_counts as (
     group by 1
 ),
 
+location_id_counts as (
+    select cqc_location_id, count(*) as cqc_count
+    from current_cqc
+    where ods_code is null
+    group by 1
+),
+
 orgs as (
     select organisation_code, name
     from (
@@ -60,7 +67,7 @@ orgs as (
     ) = 1
 ),
 
-merged as (
+merged_by_ods_code as (
     select
         md5('ods:' || ods.organisation_code) as location_id,
         coalesce(cqc.name, ods.name) as name,
@@ -71,6 +78,18 @@ merged as (
         cqc.cqc_location_id as regulator_id,
         coalesce(orgs.name, cqc.provider_name) as parent_name,
         coalesce(ods.parent_organisation_code, cqc.provider_id) as parent_code,
+        case
+            when ods.parent_organisation_code is not null
+                and cqc.provider_id is not null
+                and cqc.provider_id <> ods.parent_organisation_code
+                then cqc.provider_id
+        end as alt_parent_code,
+        case
+            when ods.parent_organisation_code is not null
+                and cqc.provider_id is not null
+                and cqc.provider_id <> ods.parent_organisation_code
+                then cqc.provider_name
+        end as alt_parent_name,
         coalesce({{ address_of(['cqc.address_1', 'cqc.address_2']) }}, ods.address) as address,
         coalesce(cqc.postcode, ods.postcode) as postcode,
         coalesce(cqc.postcode_compact, ods.postcode_compact) as postcode_compact,
@@ -98,6 +117,56 @@ merged as (
         on ods.parent_organisation_code = orgs.organisation_code
 ),
 
+merged_by_cqc_id as (
+    select
+        md5('ods:' || ods.organisation_code) as location_id,
+        coalesce(cqc.name, ods.name) as name,
+        ods.name as alt_name,
+        cqc.brand_name,
+        ods.organisation_code as nhs_code,
+        'CQC' as regulator,
+        cqc.cqc_location_id as regulator_id,
+        coalesce(orgs.name, cqc.provider_name) as parent_name,
+        coalesce(ods.parent_organisation_code, cqc.provider_id) as parent_code,
+        cast(null as varchar) as alt_parent_code,
+        cast(null as varchar) as alt_parent_name,
+        coalesce({{ address_of(['cqc.address_1', 'cqc.address_2']) }}, ods.address) as address,
+        coalesce(cqc.postcode, ods.postcode) as postcode,
+        coalesce(cqc.postcode_compact, ods.postcode_compact) as postcode_compact,
+        coalesce(cqc.town, ods.town) as town,
+        cqc.care_home,
+        cqc.primary_category,
+        cqc.primary_category as service_category,
+        'ods+cqc' as source,
+        'england' as origin,
+        'England' as country_fallback,
+        cast(null as varchar) as source_health_code,
+        cast(null as varchar) as source_health_name,
+        cast(null as varchar) as source_health_type,
+        cqc.region_name as cqc_region_name,
+        cqc.local_authority_name as cqc_local_authority_name,
+        ods.icb_code as ods_icb_code,
+        coalesce(cqc.valid_from, ods.valid_from) as valid_from
+    from open_ods as ods
+    inner join current_cqc as cqc
+        on cqc.ods_code is null
+        and ods.organisation_code = cqc.cqc_location_id
+        and ods.parent_organisation_code is not null
+        and ods.parent_organisation_code = cqc.provider_id
+    inner join location_id_counts
+        on cqc.cqc_location_id = location_id_counts.cqc_location_id
+        and location_id_counts.cqc_count = 1
+    left join orgs
+        on ods.parent_organisation_code = orgs.organisation_code
+    where ods.organisation_code not in (select nhs_code from merged_by_ods_code)
+),
+
+merged as (
+    select * from merged_by_ods_code
+    union all
+    select * from merged_by_cqc_id
+),
+
 ods_only as (
     select
         md5('ods:' || ods.organisation_code) as location_id,
@@ -109,6 +178,8 @@ ods_only as (
         cast(null as varchar) as regulator_id,
         orgs.name as parent_name,
         ods.parent_organisation_code as parent_code,
+        cast(null as varchar) as alt_parent_code,
+        cast(null as varchar) as alt_parent_name,
         ods.address,
         ods.postcode,
         ods.postcode_compact,
@@ -127,11 +198,9 @@ ods_only as (
         ods.icb_code as ods_icb_code,
         ods.valid_from
     from open_ods as ods
-    left join code_counts
-        on ods.organisation_code = code_counts.ods_code
     left join orgs
         on ods.parent_organisation_code = orgs.organisation_code
-    where code_counts.ods_code is null
+    where ods.organisation_code not in (select nhs_code from merged)
 ),
 
 cqc_rest as (
@@ -149,6 +218,8 @@ cqc_rest as (
         cqc.cqc_location_id as regulator_id,
         cqc.provider_name as parent_name,
         cqc.provider_id as parent_code,
+        cast(null as varchar) as alt_parent_code,
+        cast(null as varchar) as alt_parent_name,
         {{ address_of(['cqc.address_1', 'cqc.address_2']) }} as address,
         cqc.postcode,
         cqc.postcode_compact,
