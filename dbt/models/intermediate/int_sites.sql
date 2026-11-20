@@ -15,6 +15,8 @@ placed as (
         sites.regulator_id,
         sites.parent_name,
         sites.parent_code,
+        sites.alt_parent_code,
+        sites.alt_parent_name,
         sites.address,
         sites.postcode,
         sites.postcode_compact,
@@ -79,7 +81,9 @@ placed as (
         end as health_area_type,
         case
             when sites.source_health_code is not null or sites.source_health_name is not null
-                then sites.source_health_code
+                then case
+                    when sites.source_health_type = 'hsc_trust' then sites.source_health_code
+                end
             else coalesce(geo.health_area_ods_code, icb_by_ods.ods_code)
         end as health_area_ods_code,
         mapped.service_type as mapped_service_type,
@@ -119,6 +123,8 @@ select
     regulator_id,
     parent_name,
     parent_code,
+    alt_parent_code,
+    alt_parent_name,
     address,
     postcode,
     postcode_compact,
@@ -188,6 +194,7 @@ select
             select organisation_code from {{ ref('stg_ods_welsh_boards') }} where valid_to is null
         ) then 'ods'
         when source = 'cqc' then 'cqc_provider'
+        when source = 'ods+cqc' and parent_code like '1-%' then 'cqc_provider'
         when source in ('ods', 'ods+cqc') then 'ods'
         else 'unknown'
     end as parent_code_system,

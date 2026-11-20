@@ -42,19 +42,33 @@ DEACTIVATED_COLUMNS = {
 }
 
 
+def _element_text(element: ET.Element, parts: list[str]) -> None:
+    if element.tag == TEXT + "s":
+        count = int(element.get(TEXT + "c") or "1")
+        parts.append(" " * count)
+    elif element.tag == TEXT + "tab":
+        parts.append("\t")
+    elif element.tag == TEXT + "line-break":
+        parts.append("\n")
+    if element.text:
+        parts.append(element.text)
+    for child in element:
+        _element_text(child, parts)
+        if child.tail:
+            parts.append(child.tail)
+
+
 def _cell_text(cell: ET.Element) -> str:
     dated = cell.get(OFFICE + "date-value")
     if dated:
         return dated[:10]
-    parts: list[str] = []
+    paragraphs: list[str] = []
     for paragraph in cell.iter(TEXT + "p"):
-        if paragraph.text:
-            parts.append(paragraph.text)
-        for child in list(paragraph):
-            if child.tail:
-                parts.append(child.tail)
-    if parts:
-        return "".join(parts).strip()
+        parts: list[str] = []
+        _element_text(paragraph, parts)
+        paragraphs.append("".join(parts))
+    if paragraphs:
+        return "\n".join(paragraphs).strip()
     return (cell.get(OFFICE + "value") or "").strip()
 
 

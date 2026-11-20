@@ -12,7 +12,7 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
-from data import SAMPLE_WARNING, ensure_data
+from data import SAMPLE_WARNING, STALE_CACHE_WARNING, ensure_data
 from match_text import ALL_COLUMNS, DEFAULT_COLUMNS, chosen_columns, download_stem, strip_stopwords
 
 
@@ -104,9 +104,12 @@ GUIDE = """
 """
 
 
+def _escape_like(value: str) -> str:
+    return re.sub(r"([%_\\])", r"\\\1", value.strip())
+
+
 def _like(value: str) -> str:
-    escaped = re.sub(r"([%_\\])", r"\\\1", value.strip())
-    return f"%{escaped}%"
+    return f"%{_escape_like(value)}%"
 
 
 @st.cache_resource
@@ -115,33 +118,74 @@ def _connection() -> duckdb.DuckDBPyConnection:
 
 
 @st.cache_data(show_spinner=False, max_entries=256)
-def _search(search_path: str, query: str, stamp: str) -> pd.DataFrame:
-    order = "case entity_type " + " ".join(
+def _search(
+    search_path: str,
+    query: str,
+    stamp: str,
+    links_path: str | None = None,
+    location_path: str | None = None,
+    aliases_path: str | None = None,
+    services: tuple[str, ...] = (),
+    countries: tuple[str, ...] = (),
+) -> pd.DataFrame:
+    order = "case entity.entity_type " + " ".join(
         f"when '{entity_type}' then {index}" for index, entity_type in enumerate(TYPE_ORDER)
     ) + " else 99 end"
     columns = {
         row[0]
         for row in _connection().execute("describe select * from read_parquet(?)", [search_path]).fetchall()
     }
-    current_only = "and site_count > 0" if "site_count" in columns else ""
+    current_only = "and entity.site_count > 0" if "site_count" in columns else ""
+    like_query = _like(query)
+    prefix_query = f"{_escape_like(query)}%"
+    trimmed = query.strip()
+
+    params: list[str] = [search_path, like_query]
+    if aliases_path:
+        match_sql = (
+            "(entity.search_text ilike ? escape '\\' "
+            "or exists (select 1 from read_parquet(?) as alias "
+            "where alias.entity_id = entity.entity_id "
+            "and alias.alias_text ilike ? escape '\\'))"
+        )
+        params.extend([aliases_path, like_query])
+    else:
+        match_sql = "entity.search_text ilike ? escape '\\'"
+
+    scope_sql = ""
+    if (services or countries) and links_path and location_path:
+        filter_sql, filter_params = _filters(services, countries)
+        scope_sql = (
+            "and exists ("
+            "select 1 from read_parquet(?) as links "
+            "inner join read_parquet(?) as location "
+            "on links.location_id = location.location_id "
+            f"where links.entity_id = entity.entity_id and {filter_sql}"
+            ")"
+        )
+        params.extend([links_path, location_path, *filter_params])
+
+    params.extend([trimmed, trimmed, prefix_query])
     return _connection().cursor().execute(
         f"""
-        select entity_id, entity_type, name, code
-        from read_parquet(?)
-        where search_text ilike ? escape '\\'
+        select entity.entity_id, entity.entity_type, entity.name, entity.code
+        from read_parquet(?) as entity
+        where {match_sql}
         {current_only}
+        {scope_sql}
         order by
             case
-                when upper(coalesce(code, '')) = upper(?) then 0
-                when upper(name) = upper(?) then 1
-                when upper(name) like upper(?) || '%' escape '\\' then 2
+                when upper(coalesce(entity.code, '')) = upper(?) then 0
+                when upper(entity.name) = upper(?) then 1
+                when upper(entity.name) like upper(?) escape '\\' then 2
                 else 3
             end,
             {order},
-            length(name)
+            length(entity.name),
+            entity.entity_id
         limit 30
         """,
-        [search_path, _like(query), query.strip(), query.strip(), query.strip()],
+        params,
     ).df()
 
 
@@ -387,7 +431,7 @@ def _show_place(
     st.caption(note)
 
     identity = entity_id or "all"
-    token = f"{identity}|{','.join(services)}|{','.join(countries)}|{','.join(columns)}"
+    token = f"{stamp}|{identity}|{','.join(services)}|{','.join(countries)}|{','.join(columns)}"
     if st.session_state.get("export_token") != token:
         st.session_state["export_token"] = token
         st.session_state.pop("export_csv", None)
@@ -438,7 +482,7 @@ def main() -> None:
         if st.button("Full guide", width="stretch"):
             st.switch_page("help.py")
     st.html(
-        '<p class="version">v0.3.0 · UK</p>'
+        '<p class="version">v0.4.0 · UK</p>'
         f"<style>{_icon_css(_selected_country())}</style>"
     )
     st.html(
@@ -447,6 +491,12 @@ def main() -> None:
 
     if paths.source == "sample":
         st.warning(SAMPLE_WARNING)
+    elif paths.source == "stale_cache":
+        st.warning(STALE_CACHE_WARNING)
+    elif paths.manifest.get("build_status") in {"degraded", "partial"}:
+        st.warning(
+            "Some sources in this build are stale or omitted. See Full guide for details."
+        )
 
     with st.expander("How to use", expanded=False):
         st.markdown(GUIDE)
@@ -514,7 +564,17 @@ def main() -> None:
         )
         return
 
-    hits = _search(paths.search.as_posix(), query, stamp)
+    aliases_path = paths.aliases.as_posix() if paths.aliases else None
+    hits = _search(
+        paths.search.as_posix(),
+        query,
+        stamp,
+        links_path=links_path,
+        location_path=location_path,
+        aliases_path=aliases_path,
+        services=services,
+        countries=countries,
+    )
     if hits.empty:
         st.warning("No places found. Try a shorter name, a county, or a postcode.")
         return

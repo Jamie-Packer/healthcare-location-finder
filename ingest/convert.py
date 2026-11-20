@@ -125,15 +125,55 @@ def _write(dest: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> int
     return len(rows)
 
 
-def _mapped_rows(source: Path, columns: dict[str, str], allowed: dict[str, set[str] | None]) -> list[dict[str, str]]:
+CIW_REQUIRED = (
+    "Service URN",
+    "Service name",
+    "Service type",
+    "Service sub-type",
+    "Service postcode",
+    "Provider name",
+)
+INSPECTORATE_REQUIRED = (
+    "CSNumber",
+    "CareService",
+    "Subtype",
+    "ServiceName",
+    "Service_Postcode",
+    "ServiceStatus",
+)
+PHS_HOSPITAL_REQUIRED = ("HospitalCode", "HospitalName", "Postcode", "HealthBoard")
+PHS_PRACTICE_REQUIRED = ("PracticeCode", "GPPracticeName", "Postcode", "HB")
+PHS_BOARD_REQUIRED = ("CA", "HB", "HBName")
+
+
+def _require_headers(fieldnames: list[str] | None, required: tuple[str, ...], label: str) -> None:
+    present = {name.strip() for name in (fieldnames or []) if name}
+    missing = [name for name in required if name not in present]
+    if missing:
+        raise RuntimeError(f"{label} is missing columns: " + ", ".join(missing))
+
+
+def _mapped_rows(
+    source: Path,
+    columns: dict[str, str],
+    allowed: dict[str, set[str] | None],
+    required: tuple[str, ...],
+    label: str,
+    status_column: str | None = None,
+) -> list[dict[str, str]]:
     reader = csv.DictReader(StringIO(_read_text(source)))
+    _require_headers(reader.fieldnames, required, label)
     rows: list[dict[str, str]] = []
     for record in reader:
+        if status_column is not None:
+            status = _clean(record.get(status_column)).lower()
+            if status not in {"", "active"}:
+                continue
         service_type = _clean(record.get("Service type") or record.get("CareService"))
         subtype = _clean(record.get("Service sub-type") or record.get("Subtype"))
         if not _keep(service_type, subtype, allowed):
             continue
-        mapped = {label: _clean(record.get(header)) for header, label in columns.items()}
+        mapped = {out_name: _clean(record.get(header)) for header, out_name in columns.items()}
         if mapped.get("service_urn") or mapped.get("service_id"):
             if mapped.get("name"):
                 rows.append(mapped)
@@ -141,20 +181,19 @@ def _mapped_rows(source: Path, columns: dict[str, str], allowed: dict[str, set[s
 
 
 def convert_ciw(source: Path, dest: Path) -> int:
-    rows = _mapped_rows(source, CIW_COLUMNS, CIW_KEEP)
+    rows = _mapped_rows(source, CIW_COLUMNS, CIW_KEEP, CIW_REQUIRED, "CIW register")
     return _write(dest, list(CIW_COLUMNS.values()), rows)
 
 
 def convert_care_inspectorate(source: Path, dest: Path) -> int:
-    statuses = {
-        _clean(row.get("CSNumber")): _clean(row.get("ServiceStatus")).lower()
-        for row in csv.DictReader(StringIO(_read_text(source)))
-    }
-    rows = [
-        record
-        for record in _mapped_rows(source, INSPECTORATE_COLUMNS, INSPECTORATE_KEEP)
-        if statuses.get(record["service_id"], "active") in {"", "active"}
-    ]
+    rows = _mapped_rows(
+        source,
+        INSPECTORATE_COLUMNS,
+        INSPECTORATE_KEEP,
+        INSPECTORATE_REQUIRED,
+        "Care Inspectorate register",
+        status_column="ServiceStatus",
+    )
     return _write(dest, list(INSPECTORATE_COLUMNS.values()), rows)
 
 
@@ -199,16 +238,18 @@ def convert_rqia(source: Path, dest: Path) -> int:
     return _write(dest, list(RQIA_FIELDS.values()), rows)
 
 
-def _csv_records(source: Path) -> list[dict[str, str]]:
+def _csv_records(source: Path, required: tuple[str, ...], label: str) -> list[dict[str, str]]:
+    reader = csv.DictReader(StringIO(_read_text(source)))
+    _require_headers(reader.fieldnames, required, label)
     return [
         {name.strip(): _clean(value) for name, value in row.items() if name}
-        for row in csv.DictReader(StringIO(_read_text(source)))
+        for row in reader
     ]
 
 
 def convert_phs_hospitals(source: Path, dest: Path) -> int:
     rows = []
-    for record in _csv_records(source):
+    for record in _csv_records(source, PHS_HOSPITAL_REQUIRED, "PHS hospitals"):
         code = record.get("HospitalCode", "")
         name = record.get("HospitalName", "")
         if not code or not name:
@@ -232,7 +273,7 @@ def convert_phs_hospitals(source: Path, dest: Path) -> int:
 
 def convert_phs_practices(source: Path, dest: Path) -> int:
     rows = []
-    for record in _csv_records(source):
+    for record in _csv_records(source, PHS_PRACTICE_REQUIRED, "PHS practices"):
         code = record.get("PracticeCode", "")
         name = record.get("GPPracticeName", "")
         if not code or not name:
@@ -257,7 +298,7 @@ def convert_phs_practices(source: Path, dest: Path) -> int:
 def convert_phs_boards(source: Path, dest: Path) -> int:
     seen: set[str] = set()
     rows = []
-    for record in _csv_records(source):
+    for record in _csv_records(source, PHS_BOARD_REQUIRED, "PHS boards"):
         if record.get("CADateArchived") or record.get("HBDateArchived"):
             continue
         code = record.get("CA", "")

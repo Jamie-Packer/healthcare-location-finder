@@ -248,9 +248,11 @@ def identity_unchanged(current: RemoteFile, previous: dict | None) -> bool:
     if current.key == NSPL_KEY:
         return previous.get("edition") == current.edition and previous.get("modified") == current.modified
     if current.key in (CQC_ACTIVE, CQC_DEACTIVATED):
+        if current.etag and previous.get("etag"):
+            return current.etag == previous["etag"]
         if current.last_modified and previous.get("last_modified"):
             return current.last_modified == previous["last_modified"]
-        return True
+        return False
     return False
 
 

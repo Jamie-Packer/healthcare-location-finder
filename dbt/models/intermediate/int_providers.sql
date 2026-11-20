@@ -7,6 +7,10 @@ universe as (
     from sites
     where parent_code is not null
     union
+    select alt_parent_code as provider_code
+    from sites
+    where alt_parent_code is not null
+    union
     select organisation_code
     from {{ ref('stg_ods_trusts') }}
     where valid_to is null
@@ -88,26 +92,45 @@ authority_one as (
     ) = 1
 ),
 
-observed_system as (
+observed_links as (
     select
         parent_code as provider_code,
-        case
-            when count(*) filter (where parent_code_system = 'ods') > 0 then 'ods'
-            else min(parent_code_system)
-        end as code_system
+        parent_name as provider_name,
+        parent_code_system as code_system,
+        location_id
     from sites
     where parent_code is not null
-    group by parent_code
+    union all
+    select
+        alt_parent_code as provider_code,
+        alt_parent_name as provider_name,
+        case
+            when alt_parent_code like '1-%' then 'cqc_provider'
+            else 'ods'
+        end as code_system,
+        location_id
+    from sites
+    where alt_parent_code is not null
+),
+
+observed_system as (
+    select
+        provider_code,
+        case
+            when count(*) filter (where code_system = 'ods') > 0 then 'ods'
+            else min(code_system)
+        end as code_system
+    from observed_links
+    group by provider_code
 ),
 
 site_names as (
     select
-        parent_code as provider_code,
-        parent_name as name,
+        provider_code,
+        provider_name as name,
         count(*) as votes
-    from sites
-    where parent_code is not null
-        and parent_name is not null
+    from observed_links
+    where provider_name is not null
     group by 1, 2
 ),
 
@@ -157,9 +180,8 @@ ciw_types as (
 ),
 
 site_counts as (
-    select parent_code as provider_code, count(*) as site_count
-    from sites
-    where parent_code is not null
+    select provider_code, count(distinct location_id) as site_count
+    from observed_links
     group by 1
 ),
 

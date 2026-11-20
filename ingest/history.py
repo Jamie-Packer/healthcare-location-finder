@@ -27,6 +27,10 @@ ADDED = {
 }
 
 
+def _sql_path(path: Path) -> str:
+    return path.as_posix().replace("'", "''")
+
+
 def restore_history(database: Path, history: Path) -> bool:
     """Load a previous snapshot export. Returns false when there is nothing to load."""
     if not history.exists() or history.stat().st_size == 0:
@@ -38,14 +42,14 @@ def restore_history(database: Path, history: Path) -> bool:
         columns = {
             row[0]
             for row in connection.sql(
-                f"describe select * from read_parquet('{history.as_posix()}')"
+                f"describe select * from read_parquet('{_sql_path(history)}')"
             ).fetchall()
         }
         if not REQUIRED <= columns:
             print("previous location history does not match this snapshot; starting again", flush=True)
             return False
         connection.execute(
-            f"create or replace table {SNAPSHOT} as select * from read_parquet('{history.as_posix()}')"
+            f"create or replace table {SNAPSHOT} as select * from read_parquet('{_sql_path(history)}')"
         )
         present = {row[0] for row in connection.execute(f"describe {SNAPSHOT}").fetchall()}
         for name, kind in ADDED.items():
@@ -73,7 +77,7 @@ def export_history(database: Path, dest: Path) -> None:
         if SNAPSHOT not in tables:
             raise RuntimeError(f"{SNAPSHOT} was not created")
         connection.execute(
-            f"copy (select * from {SNAPSHOT}) to '{dest.as_posix()}' (format parquet)"
+            f"copy (select * from {SNAPSHOT}) to '{_sql_path(dest)}' (format parquet)"
         )
     finally:
         connection.close()

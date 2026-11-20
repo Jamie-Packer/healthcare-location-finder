@@ -88,8 +88,8 @@ Streamlit Community Cloud can run `app/streamlit_app.py` from this repository wi
 
 The theme lives in `.streamlit/config.toml`, with fonts loaded in `app/theme.py`.
 
-## Data
+## Data and licence
 
-Source datasets are used under the [Open Government Licence](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). Attribute NHS England, the Care Quality Commission, Care Inspectorate Wales, Public Health Scotland, the Care Inspectorate, RQIA and the Office for National Statistics when you republish extracts.
+The code in this repository is licensed under the [MIT License](LICENSE). Source datasets are used under the [Open Government Licence](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). Attribute NHS England, the Care Quality Commission, Care Inspectorate Wales, Public Health Scotland, the Care Inspectorate, RQIA and the Office for National Statistics when you republish extracts.
 
 Contains OS data © Crown copyright and database right. Contains Royal Mail data © Royal Mail copyright and database right. Contains National Statistics data © Crown copyright and database right. See the [ONS geography licences](https://www.ons.gov.uk/methodology/geography/licences).

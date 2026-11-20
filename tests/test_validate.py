@@ -90,3 +90,44 @@ def test_mart_band_and_force(tmp_path):
     assert any("outside" in failure for failure in caught.value.failures)
     validate_marts(jumped, {"row_counts": {"location": rows}}, force=True)
     assert jumped_rows > rows
+
+
+def test_ods_reader_preserves_apostrophes_and_following_rows(tmp_path):
+    import csv
+    from ingest.validate import _ods_shape
+
+    sample = tmp_path / "ets.csv"
+    sample.write_text(
+        '"REP01","LIVERPOOL WOMEN\'S HOSPITAL","Y62","QYG","CROWN STREET","","","LIVERPOOL","MERSEYSIDE","L8 7SS","20000401","","A","","REP",""\n'
+        '"REP02","ST MARY\'S, ""EAST"" WING","Y62","QYG","HIGH STREET","","","LIVERPOOL","MERSEYSIDE","L8 7SS","20000401","","A","","REP",""\n'
+        '"REP03","FOLLOWING SITE","Y62","QYG","MAIN ROAD","","","LIVERPOOL","MERSEYSIDE","L8 7SS","20000401","","A","","REP",""\n',
+        encoding="utf-8",
+    )
+    with sample.open(encoding="utf-8", newline="") as handle:
+        expected = list(csv.reader(handle))
+    count, width = _ods_shape(sample)
+    assert count == len(expected) == 3
+    assert width == 16
+    con = duckdb.connect()
+    try:
+        rows = con.execute(
+            f"""
+            select column00, column01
+            from read_csv(
+                '{sample.as_posix()}',
+                header = false,
+                all_varchar = true,
+                quote = '"',
+                escape = '"',
+                delim = ',',
+                strict_mode = false,
+                null_padding = true,
+                parallel = false
+            )
+            order by column00
+            """
+        ).fetchall()
+    finally:
+        con.close()
+    assert rows == [(row[0], row[1]) for row in expected]
+

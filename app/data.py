@@ -22,10 +22,14 @@ ASSETS = (
     "entity_site.parquet",
     "manifest.json",
 )
+OPTIONAL_ASSETS = ("entity_alias.parquet",)
 LOCAL = ROOT / "data" / "mart"
 MIN_PARQUET_BYTES = 1_000_000
 SAMPLE_WARNING = (
     "Showing the bundled sample, because the published location files could not be downloaded."
+)
+STALE_CACHE_WARNING = (
+    "Showing the last downloaded copy, because the latest release could not be checked."
 )
 
 
@@ -47,6 +51,11 @@ class LocationData:
     def links(self) -> Path:
         return self.directory / "entity_site.parquet"
 
+    @property
+    def aliases(self) -> Path | None:
+        path = self.directory / "entity_alias.parquet"
+        return path if path.exists() and path.stat().st_size > 0 else None
+
 
 def load_manifest(directory: Path) -> dict:
     path = directory / "manifest.json"
@@ -67,11 +76,15 @@ def _asset_url(name: str) -> str:
     return f"https://github.com/{_repository()}/releases/download/{RELEASE['tag']}/{name}"
 
 
+def _cache_dir() -> Path:
+    return Path(os.environ.get("LOCATIONS_CACHE_DIR", Path.home() / ".cache" / "healthcare-location-reference"))
+
+
 def _download_release() -> Path | None:
-    cache = Path(os.environ.get("LOCATIONS_CACHE_DIR", Path.home() / ".cache" / "healthcare-location-reference"))
+    cache = _cache_dir()
     staging = cache.with_name(cache.name + ".partial")
     session = requests.Session()
-    session.headers["User-Agent"] = "healthcare-location-reference/0.3"
+    session.headers["User-Agent"] = "healthcare-location-reference/0.4"
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
@@ -87,6 +100,15 @@ def _download_release() -> Path | None:
                 raise RuntimeError(f"{name} is too small to be the published mart")
             if name.endswith(".json"):
                 json.loads(target.read_text(encoding="utf-8"))
+        for name in OPTIONAL_ASSETS:
+            response = session.get(_asset_url(name), timeout=(30, 600), allow_redirects=True)
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            if "text/html" in response.headers.get("Content-Type", ""):
+                continue
+            target = staging / name
+            target.write_bytes(response.content)
         _check_published_hashes(staging)
     except (requests.RequestException, OSError, RuntimeError, ValueError):
         shutil.rmtree(staging, ignore_errors=True)
@@ -146,6 +168,9 @@ def ensure_data() -> LocationData:
     try:
         return _cached_release()
     except ReleaseUnavailable:
+        cache = _cache_dir()
+        if _complete(cache):
+            return LocationData(cache, "stale_cache", load_manifest(cache))
         return _sample()
 
 
@@ -241,20 +266,25 @@ def currency_markdown(data: LocationData) -> str:
 
 
 def _source_currency(manifest: dict) -> str:
-    stale, dated, undated = [], [], []
+    stale, omitted, dated, undated = [], [], [], []
     for source in manifest.get("sources", []):
         label = SOURCE_LABELS.get(source.get("key", ""))
         if label is None:
             continue
-        if source.get("status") == "fallback":
+        status = source.get("status")
+        if status == "fallback":
             since = source.get("stale_since")
             when = f" since {_long_date(since)}" if since else ""
             stale.append(f"- **{label}** is stale{when}, so its last good copy is used.")
+        elif status == "missing":
+            omitted.append(f"- **{label}** was left out of this build.")
         elif source.get("publisher_date"):
             dated.append(f"- {label}: {_long_date(source['publisher_date'])}")
         else:
             undated.append(label)
     parts = []
+    if omitted:
+        parts.append("**Omitted sources**\n\n" + "\n".join(omitted))
     if stale:
         parts.append("**Stale sources**\n\n" + "\n".join(stale))
     if dated:

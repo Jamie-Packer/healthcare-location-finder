@@ -78,16 +78,17 @@ def download_file(
     refresh: bool,
 ) -> tuple[str, int, str | None, str | None]:
     dest.parent.mkdir(parents=True, exist_ok=True)
+    label = dest.relative_to(ROOT) if dest.is_relative_to(ROOT) else dest.name
     if dest.exists() and dest.stat().st_size >= minimum and not refresh:
-        print(f"skip {dest.relative_to(ROOT)}", flush=True)
+        print(f"skip {label}", flush=True)
         return sha256_file(dest), dest.stat().st_size, None, None
-    print(f"get  {dest.relative_to(ROOT)}", flush=True)
+    print(f"get  {label}", flush=True)
     partial = dest.with_suffix(dest.suffix + ".part")
     try:
         with session.get(url, stream=True, timeout=(30, 600)) as response:
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "")
-            if "text/html" in content_type and dest.suffix != ".csv":
+            if "text/html" in content_type:
                 raise RuntimeError(f"{url} returned HTML instead of a data file")
             last_modified = response.headers.get("Last-Modified")
             etag = response.headers.get("ETag")
@@ -125,18 +126,23 @@ def apply_download(
     return item
 
 
-def prepare_cqc(refresh: bool) -> None:
+def prepare_cqc_file(key: str, refresh: bool) -> None:
     outputs = {
-        RAW / CQC_ACTIVE: (RAW / "cqc" / "locations.csv", ACTIVE_COLUMNS),
-        RAW / CQC_DEACTIVATED: (RAW / "cqc" / "deactivated_locations.csv", DEACTIVATED_COLUMNS),
+        CQC_ACTIVE: (RAW / CQC_ACTIVE, RAW / "cqc" / "locations.csv", ACTIVE_COLUMNS),
+        CQC_DEACTIVATED: (RAW / CQC_DEACTIVATED, RAW / "cqc" / "deactivated_locations.csv", DEACTIVATED_COLUMNS),
     }
-    for source, (dest, columns) in outputs.items():
-        if dest.exists() and dest.stat().st_size > 0 and not refresh:
-            print(f"skip {dest.relative_to(ROOT)}", flush=True)
-            continue
-        print(f"convert {source.name}", flush=True)
-        count = convert_locations(source, dest, columns)
-        print(f"wrote {dest.relative_to(ROOT)} ({count} rows)", flush=True)
+    source, dest, columns = outputs[key]
+    if dest.exists() and dest.stat().st_size > 0 and not refresh:
+        print(f"skip {dest.relative_to(ROOT)}", flush=True)
+        return
+    print(f"convert {source.name}", flush=True)
+    count = convert_locations(source, dest, columns)
+    print(f"wrote {dest.relative_to(ROOT)} ({count} rows)", flush=True)
+
+
+def prepare_cqc(refresh: bool) -> None:
+    for key in (CQC_ACTIVE, CQC_DEACTIVATED):
+        prepare_cqc_file(key, refresh)
 
 
 def _name_code(member: str) -> str | None:
@@ -225,7 +231,14 @@ def build_postcode_parquet(extracted: Path, parquet: Path) -> None:
         f"""
         copy (
             select {", ".join(selects)}
-            from read_csv('{extracted.as_posix()}', header = true, all_varchar = true)
+            from read_csv(
+                '{extracted.as_posix()}',
+                header = true,
+                all_varchar = true,
+                quote = '"',
+                escape = '"',
+                delim = ','
+            )
             where \"{lookup['pcds']}\" is not null and \"{lookup['pcds']}\" <> ''
             qualify row_number() over (
                 partition by upper(replace(\"{lookup['pcds']}\", ' ', ''))

@@ -136,6 +136,25 @@ candidates as (
     union all
 
     select
+        'provider:' || sites.alt_parent_code,
+        'provider',
+        providers.provider_name,
+        sites.alt_parent_code,
+        providers.code_system,
+        upper(concat_ws(' ', providers.provider_name, sites.alt_parent_code)),
+        sites.location_id,
+        'provider',
+        'cqc',
+        providers.entity_subtype,
+        providers.entity_subtype_source
+    from sites
+    inner join providers
+        on providers.provider_code = sites.alt_parent_code
+    where sites.alt_parent_code is not null
+
+    union all
+
+    select
         'provider:' || provider_code,
         'provider',
         provider_name,

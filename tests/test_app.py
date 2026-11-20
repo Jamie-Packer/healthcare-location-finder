@@ -99,8 +99,8 @@ def test_download_uses_the_matching_place_name(fixture_mart):
 def test_version_label_and_table_download(fixture_mart):
     app = _search_app(fixture_mart)
     html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
-    assert "v0.3.0 · UK" in html_text
-    assert "v0.2.2" not in html_text
+    assert "v0.4.0 · UK" in html_text
+    assert "v0.3.0" not in html_text
     assert "current sites" not in html_text
     app.text_input[0].set_value("Kent").run()
     assert not app.code
@@ -179,7 +179,112 @@ def test_country_narrows_a_place(fixture_mart):
     app = _search_app(fixture_mart)
     app.session_state["country"] = "Scotland"
     app.text_input[0].set_value("Kent").run()
-    assert _counts(app) == 0
+    assert any("No places found" in str(item.value) for item in app.warning)
+
+
+def test_search_finds_brand_alias(fixture_mart):
+    app = _search_app(fixture_mart)
+    app.text_input[0].set_value("Ward Brand").run()
+    assert not app.exception
+    assert _counts(app) >= 1
+
+
+def test_currency_marks_omitted_sources_explicitly(tmp_path):
+    text = currency_markdown(
+        LocationData(
+            directory=tmp_path,
+            source="release",
+            manifest={
+                "built_at": "2026-10-13T04:00:00+00:00",
+                "sources": [
+                    {"key": "rqia/services.csv", "status": "missing"},
+                ],
+            },
+        )
+    )
+    assert "**RQIA services** was left out of this build." in text
+    assert "were fetched for this build" not in text
+
+
+def test_search_filters_by_country_before_the_30_row_limit(tmp_path):
+    import duckdb
+    import sys
+
+    mart = tmp_path / "mart"
+    mart.mkdir()
+    con = duckdb.connect()
+    con.execute(
+        f"""
+        copy (
+            select
+                'eng-' || i as location_id,
+                'Springfield Clinic ' || lpad(cast(i as varchar), 2, '0') as name,
+                'England' as country_name,
+                'other' as service_type
+            from range(35) as t(i)
+            union all
+            select
+                'ni-1',
+                'Springfield Medical Centre Belfast',
+                'Northern Ireland',
+                'gp'
+        ) to '{(mart / "location.parquet").as_posix()}' (format parquet)
+        """
+    )
+    con.execute(
+        f"""
+        copy (
+            select
+                'site:eng-' || i as entity_id,
+                'site' as entity_type,
+                'Springfield Clinic ' || lpad(cast(i as varchar), 2, '0') as name,
+                null as code,
+                upper('Springfield Clinic ' || lpad(cast(i as varchar), 2, '0')) as search_text,
+                1 as site_count
+            from range(35) as t(i)
+            union all
+            select
+                'site:ni-1',
+                'site',
+                'Springfield Medical Centre Belfast',
+                null,
+                'SPRINGFIELD MEDICAL CENTRE BELFAST',
+                1
+        ) to '{(mart / "search_entity.parquet").as_posix()}' (format parquet)
+        """
+    )
+    con.execute(
+        f"""
+        copy (
+            select 'site:eng-' || i as entity_id, 'eng-' || i as location_id
+            from range(35) as t(i)
+            union all
+            select 'site:ni-1', 'ni-1'
+        ) to '{(mart / "entity_site.parquet").as_posix()}' (format parquet)
+        """
+    )
+    con.close()
+
+    app_dir = str(ROOT / "app")
+    if app_dir not in sys.path:
+        sys.path.insert(0, app_dir)
+    import search as app_search
+
+    hits = app_search._search(
+        (mart / "search_entity.parquet").as_posix(),
+        "Springfield",
+        "test-stamp",
+        links_path=(mart / "entity_site.parquet").as_posix(),
+        location_path=(mart / "location.parquet").as_posix(),
+        countries=("Northern Ireland",),
+    )
+    assert list(hits["entity_id"]) == ["site:ni-1"]
+
+
+def test_export_token_includes_build_stamp(fixture_mart):
+    app = _search_app(fixture_mart)
+    app.text_input[0].set_value("Kent").run()
+    assert app.session_state["export_token"].startswith("local|")
 
 
 def test_help_page_keeps_its_sections(fixture_mart):
@@ -202,6 +307,8 @@ def test_help_page_keeps_its_sections(fixture_mart):
     assert "Open Government Licence" in text
     assert [item.value for item in app.subheader] == ["How the records relate"]
     assert "shares a row with an NHS site" in text
+    assert "Identifying code" in text
+    assert "MIT License" in text
 
 
 def test_northern_ireland_icon_uses_the_flag_box():
@@ -227,17 +334,30 @@ def no_local_mart(monkeypatch, tmp_path):
     app_data._cached_release.clear()
 
 
-def test_failed_download_falls_back_to_the_sample_and_retries(monkeypatch, no_local_mart):
+def test_failed_download_falls_back_to_the_sample_and_retries(monkeypatch, no_local_mart, tmp_path):
     calls = []
 
     def failing():
         calls.append(1)
         return None
 
+    monkeypatch.setenv("LOCATIONS_CACHE_DIR", str(tmp_path / "empty-cache"))
     monkeypatch.setattr(app_data, "_download_release", failing)
     assert app_data.ensure_data().source == "sample"
     assert app_data.ensure_data().source == "sample"
     assert len(calls) == 2
+
+
+def test_failed_download_keeps_existing_disk_cache_before_sample(monkeypatch, no_local_mart, tmp_path):
+    import shutil
+
+    cache = tmp_path / "disk-cache"
+    shutil.copytree(ROOT / "data" / "sample", cache)
+    monkeypatch.setenv("LOCATIONS_CACHE_DIR", str(cache))
+    monkeypatch.setattr(app_data, "_download_release", lambda: None)
+    loaded = app_data.ensure_data()
+    assert loaded.source == "stale_cache"
+    assert loaded.directory == cache
 
 
 def test_successful_download_is_cached(monkeypatch, no_local_mart):
