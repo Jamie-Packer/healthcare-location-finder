@@ -84,7 +84,7 @@ def _download_release() -> Path | None:
     cache = _cache_dir()
     staging = cache.with_name(cache.name + ".partial")
     session = requests.Session()
-    session.headers["User-Agent"] = "healthcare-location-reference/0.3"
+    session.headers["User-Agent"] = "healthcare-location-reference/0.4"
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)

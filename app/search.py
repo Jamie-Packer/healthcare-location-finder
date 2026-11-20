@@ -482,7 +482,7 @@ def main() -> None:
         if st.button("Full guide", width="stretch"):
             st.switch_page("help.py")
     st.html(
-        '<p class="version">v0.3.0 · UK</p>'
+        '<p class="version">v0.4.0 · UK</p>'
         f"<style>{_icon_css(_selected_country())}</style>"
     )
     st.html(

@@ -99,8 +99,8 @@ def test_download_uses_the_matching_place_name(fixture_mart):
 def test_version_label_and_table_download(fixture_mart):
     app = _search_app(fixture_mart)
     html_text = " ".join(str(getattr(item, "value", "")) for item in app.main)
-    assert "v0.3.0 · UK" in html_text
-    assert "v0.2.2" not in html_text
+    assert "v0.4.0 · UK" in html_text
+    assert "v0.3.0" not in html_text
     assert "current sites" not in html_text
     app.text_input[0].set_value("Kent").run()
     assert not app.code
@@ -307,6 +307,8 @@ def test_help_page_keeps_its_sections(fixture_mart):
     assert "Open Government Licence" in text
     assert [item.value for item in app.subheader] == ["How the records relate"]
     assert "shares a row with an NHS site" in text
+    assert "Identifying code" in text
+    assert "MIT License" in text
 
 
 def test_northern_ireland_icon_uses_the_flag_box():
