@@ -121,6 +121,9 @@ jobs:
         if: needs.build.outputs.action == 'publish'
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job downloads the release bundle without checking out .git,
+          # so gh needs the repository explicitly.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag=$(python3 -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
@@ -178,6 +181,7 @@ jobs:
         if: needs.build.outputs.action == 'skip'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag=$(python3 -c 'import json; print(json.load(open("release.json", encoding="utf-8"))["tag"])')
