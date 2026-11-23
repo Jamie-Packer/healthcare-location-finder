@@ -97,3 +97,26 @@ def test_resolve_previous_falls_back_to_latest_immutable_release(tmp_path, monke
     assert tag == "data-20261116T123638Z-c15bffe"
     assert manifest["build_id"] == "20261116T123638Z-c15bffe"
 
+
+def test_refresh_workflow_sets_gh_repo_for_gh_steps():
+    from pathlib import Path
+
+    import yaml
+
+    workflow = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "refresh.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    workflow_env = workflow.get("env") or {}
+    gh_steps = []
+    for job in (workflow.get("jobs") or {}).values():
+        job_env = {**workflow_env, **(job.get("env") or {})}
+        for step in job.get("steps") or []:
+            run = step.get("run") or ""
+            if "gh " in run:
+                step_env = {**job_env, **(step.get("env") or {})}
+                gh_steps.append(step.get("name"))
+                assert step_env.get("GH_REPO") == "${{ github.repository }}"
+    assert gh_steps
+
